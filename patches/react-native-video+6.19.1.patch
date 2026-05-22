@@ -1,0 +1,449 @@
+diff --git a/node_modules/react-native-video/android/.classpath b/node_modules/react-native-video/android/.classpath
+new file mode 100644
+index 0000000..bbe97e5
+--- /dev/null
++++ b/node_modules/react-native-video/android/.classpath
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<classpath>
++	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-17/"/>
++	<classpathentry kind="con" path="org.eclipse.buildship.core.gradleclasspathcontainer"/>
++	<classpathentry kind="output" path="bin/default"/>
++</classpath>
+diff --git a/node_modules/react-native-video/android/.project b/node_modules/react-native-video/android/.project
+new file mode 100644
+index 0000000..00d77c9
+--- /dev/null
++++ b/node_modules/react-native-video/android/.project
+@@ -0,0 +1,34 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<projectDescription>
++	<name>react-native-video</name>
++	<comment>Project react-native-video created by Buildship.</comment>
++	<projects>
++	</projects>
++	<buildSpec>
++		<buildCommand>
++			<name>org.eclipse.jdt.core.javabuilder</name>
++			<arguments>
++			</arguments>
++		</buildCommand>
++		<buildCommand>
++			<name>org.eclipse.buildship.core.gradleprojectbuilder</name>
++			<arguments>
++			</arguments>
++		</buildCommand>
++	</buildSpec>
++	<natures>
++		<nature>org.eclipse.jdt.core.javanature</nature>
++		<nature>org.eclipse.buildship.core.gradleprojectnature</nature>
++	</natures>
++	<filteredResources>
++		<filter>
++			<id>1778689790089</id>
++			<name></name>
++			<type>30</type>
++			<matcher>
++				<id>org.eclipse.core.resources.regexFilterMatcher</id>
++				<arguments>node_modules|\.git|__CREATED_BY_JAVA_LANGUAGE_SERVER__</arguments>
++			</matcher>
++		</filter>
++	</filteredResources>
++</projectDescription>
+diff --git a/node_modules/react-native-video/android/.settings/org.eclipse.buildship.core.prefs b/node_modules/react-native-video/android/.settings/org.eclipse.buildship.core.prefs
+new file mode 100644
+index 0000000..1675490
+--- /dev/null
++++ b/node_modules/react-native-video/android/.settings/org.eclipse.buildship.core.prefs
+@@ -0,0 +1,2 @@
++connection.project.dir=../../../android
++eclipse.preferences.version=1
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt b/node_modules/react-native-video/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt
+index 6012932..28a07a2 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt
+@@ -29,6 +29,7 @@ enum class EventTypes(val eventName: String) {
+     EVENT_FULLSCREEN_DID_DISMISS("onVideoFullscreenPlayerDidDismiss"),
+ 
+     EVENT_READY("onReadyForDisplay"),
++    EVENT_RENDERED_FIRST_FRAME("onRenderedFirstFrame"),
+     EVENT_BUFFER("onVideoBuffer"),
+     EVENT_PLAYBACK_STATE_CHANGED("onVideoPlaybackStateChanged"),
+     EVENT_IDLE("onVideoIdle"),
+@@ -78,6 +79,7 @@ class VideoEventEmitter {
+     lateinit var onVideoFullscreenPlayerWillDismiss: () -> Unit
+     lateinit var onVideoFullscreenPlayerDidDismiss: () -> Unit
+     lateinit var onReadyForDisplay: () -> Unit
++    lateinit var onRenderedFirstFrame: () -> Unit
+     lateinit var onVideoBuffer: (isBuffering: Boolean) -> Unit
+     lateinit var onControlsVisibilityChange: (isVisible: Boolean) -> Unit
+     lateinit var onVideoIdle: () -> Unit
+@@ -218,6 +220,9 @@ class VideoEventEmitter {
+             onReadyForDisplay = {
+                 event.dispatch(EventTypes.EVENT_READY)
+             }
++            onRenderedFirstFrame = {
++                event.dispatch(EventTypes.EVENT_RENDERED_FIRST_FRAME)
++            }
+             onVideoBuffer = { isBuffering ->
+                 event.dispatch(EventTypes.EVENT_BUFFER) {
+                     putBoolean("isBuffering", isBuffering)
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
+index bb945fe..806c81f 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
+@@ -4,6 +4,9 @@ import android.content.Context
+ import android.graphics.Color
+ import android.graphics.drawable.GradientDrawable
+ import android.util.AttributeSet
++import android.util.Log
++import android.view.LayoutInflater
++import android.view.SurfaceView
+ import android.view.View
+ import android.view.View.MeasureSpec
+ import android.widget.FrameLayout
+@@ -17,6 +20,8 @@ import androidx.media3.ui.DefaultTimeBar
+ import androidx.media3.ui.PlayerView
+ import com.brentvatne.common.api.ResizeMode
+ import com.brentvatne.common.api.SubtitleStyle
++import com.brentvatne.common.api.ViewType
++import com.brentvatne.react.R
+ 
+ @UnstableApi
+ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0) :
+@@ -24,6 +29,18 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+ 
+     private var localStyle = SubtitleStyle()
+     private var pendingResizeMode: Int? = null
++    private var currentViewType = ViewType.VIEW_TYPE_SURFACE
++    private var controllerEnabled = true
++    private var controllerAutoShowEnabled = true
++    private var controllerHideOnTouchEnabled = true
++    private var controllerTimeoutMs = 5000
++    private var subtitleButtonVisible = false
++    private var focusableState = true
++    private var shutterColor = Color.TRANSPARENT
++    private var hideShutterView = false
++    private var fullscreenButtonClickListener: PlayerView.FullscreenButtonClickListener? = null
++    private var controllerVisibilityListener: PlayerView.ControllerVisibilityListener? = null
++    private val externalLayoutListeners = mutableListOf<View.OnLayoutChangeListener>()
+     private val liveBadge: TextView = TextView(context).apply {
+         text = "LIVE"
+         setTextColor(Color.WHITE)
+@@ -36,21 +53,7 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+         visibility = View.GONE
+     }
+ 
+-    private val playerView = PlayerView(context).apply {
+-        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+-        setShutterBackgroundColor(Color.TRANSPARENT)
+-        useController = true
+-        controllerAutoShow = true
+-        controllerHideOnTouch = true
+-        controllerShowTimeoutMs = 5000
+-        // Don't show subtitle button by default - will be enabled when tracks are available
+-        setShowSubtitleButton(false)
+-        // Enable proper surface view handling to prevent rendering issues
+-        setUseArtwork(false)
+-        setDefaultArtwork(null)
+-        // Ensure proper video scaling - start with FIT mode
+-        resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+-    }
++    private var playerView = createConfiguredPlayerView(currentViewType)
+ 
+     init {
+         // Add PlayerView with explicit layout parameters
+@@ -63,6 +66,45 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+         addView(liveBadge, liveBadgeLayoutParams)
+     }
+ 
++    private fun inflatePlayerViewLayout(viewType: Int): PlayerView {
++        val layoutId = when (viewType) {
++            ViewType.VIEW_TYPE_TEXTURE -> R.layout.rnv_exo_player_view_texture
++            else -> R.layout.rnv_exo_player_view_surface
++        }
++        return LayoutInflater.from(context).inflate(layoutId, this, false) as PlayerView
++    }
++
++    private fun createConfiguredPlayerView(viewType: Int): PlayerView {
++        val nextPlayerView = inflatePlayerViewLayout(viewType).apply {
++            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
++            setShutterBackgroundColor(shutterColor)
++            useController = controllerEnabled
++            controllerAutoShow = controllerAutoShowEnabled
++            controllerHideOnTouch = controllerHideOnTouchEnabled
++            controllerShowTimeoutMs = controllerTimeoutMs
++            setShowSubtitleButton(subtitleButtonVisible)
++            setUseArtwork(false)
++            setDefaultArtwork(null)
++            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
++            setEnableComposeSurfaceSyncWorkaround(true)
++            isFocusable = focusableState
++        }
++        applyShutterVisibility(nextPlayerView)
++
++        if (viewType == ViewType.VIEW_TYPE_SURFACE_SECURE) {
++            (nextPlayerView.videoSurfaceView as? SurfaceView)?.setSecure(true)
++        }
++
++        externalLayoutListeners.forEach(nextPlayerView::addOnLayoutChangeListener)
++        controllerVisibilityListener?.let(nextPlayerView::setControllerVisibilityListener)
++        fullscreenButtonClickListener?.let(nextPlayerView::setFullscreenButtonClickListener)
++        pendingResizeMode?.let { resizeMode ->
++            nextPlayerView.resizeMode = resizeMode
++        }
++        setSubtitleStyle(localStyle, nextPlayerView)
++        return nextPlayerView
++    }
++
+     fun setPlayer(player: ExoPlayer?) {
+         val currentPlayer = playerView.player
+ 
+@@ -108,7 +150,12 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+     }
+ 
+     fun setSubtitleStyle(style: SubtitleStyle) {
+-        playerView.subtitleView?.let { subtitleView ->
++        localStyle = style
++        setSubtitleStyle(style, playerView)
++    }
++
++    private fun setSubtitleStyle(style: SubtitleStyle, targetPlayerView: PlayerView) {
++        targetPlayerView.subtitleView?.let { subtitleView ->
+             // Reset to defaults
+             subtitleView.setUserDefaultStyle()
+             subtitleView.setUserDefaultTextSize()
+@@ -132,15 +179,47 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+                 subtitleView.visibility = android.view.View.GONE
+             }
+         }
+-        localStyle = style
+     }
+ 
+     fun setShutterColor(color: Int) {
++        shutterColor = color
+         playerView.setShutterBackgroundColor(color)
+     }
+ 
++    fun setHideShutterView(hide: Boolean) {
++        hideShutterView = hide
++        applyShutterVisibility(playerView)
++    }
++
+     fun updateSurfaceView(viewType: Int) {
+-        // TODO: Implement proper surface type switching if needed
++        if (currentViewType == viewType) {
++            return
++        }
++
++        val attachedPlayer = playerView.player as? ExoPlayer
++        val shouldShowController = playerView.isControllerFullyVisible
++        val currentIndex = indexOfChild(playerView)
++
++        Log.d(TAG, "Switching PlayerView surface from $currentViewType to $viewType")
++
++        attachedPlayer?.removeListener(playerListener)
++        playerView.player = null
++        removeView(playerView)
++
++        playerView = createConfiguredPlayerView(viewType)
++        addView(playerView, currentIndex, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
++        currentViewType = viewType
++
++        setPlayer(attachedPlayer)
++        if (shouldShowController && controllerEnabled) {
++            playerView.showController()
++        }
++        requestLayout()
++    }
++
++    private fun applyShutterVisibility(targetPlayerView: PlayerView) {
++        val shutterView = targetPlayerView.findViewById<View>(androidx.media3.ui.R.id.exo_shutter)
++        shutterView?.visibility = if (hideShutterView) View.GONE else View.VISIBLE
+     }
+ 
+     val isPlaying: Boolean
+@@ -157,6 +236,7 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+     }
+ 
+     fun setUseController(useController: Boolean) {
++        controllerEnabled = useController
+         playerView.useController = useController
+         if (useController) {
+             // Ensure proper touch handling when controls are enabled
+@@ -176,36 +256,44 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+     }
+ 
+     fun setControllerShowTimeoutMs(showTimeoutMs: Int) {
++        controllerTimeoutMs = showTimeoutMs
+         playerView.controllerShowTimeoutMs = showTimeoutMs
+     }
+ 
+     fun setControllerAutoShow(autoShow: Boolean) {
++        controllerAutoShowEnabled = autoShow
+         playerView.controllerAutoShow = autoShow
+     }
+ 
+     fun setControllerHideOnTouch(hideOnTouch: Boolean) {
++        controllerHideOnTouchEnabled = hideOnTouch
+         playerView.controllerHideOnTouch = hideOnTouch
+     }
+ 
+     fun setFullscreenButtonClickListener(listener: PlayerView.FullscreenButtonClickListener?) {
++        fullscreenButtonClickListener = listener
+         playerView.setFullscreenButtonClickListener(listener)
+     }
+ 
+     fun setShowSubtitleButton(show: Boolean) {
++        subtitleButtonVisible = show
+         playerView.setShowSubtitleButton(show)
+     }
+ 
+     fun isControllerVisible(): Boolean = playerView.isControllerFullyVisible
+ 
+     fun setControllerVisibilityListener(listener: PlayerView.ControllerVisibilityListener?) {
++        controllerVisibilityListener = listener
+         playerView.setControllerVisibilityListener(listener)
+     }
+ 
+     override fun addOnLayoutChangeListener(listener: View.OnLayoutChangeListener) {
++        externalLayoutListeners.add(listener)
+         playerView.addOnLayoutChangeListener(listener)
+     }
+ 
+     override fun setFocusable(focusable: Boolean) {
++        focusableState = focusable
+         playerView.isFocusable = focusable
+     }
+ 
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
+index e16ac96..577d890 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
+@@ -561,6 +561,10 @@ public class ReactExoplayerView extends FrameLayout implements
+         exoPlayerView.updateSurfaceView(viewType);
+     }
+ 
++    public void setHideShutterView(boolean hideShutterView) {
++        exoPlayerView.setHideShutterView(hideShutterView);
++    }
++
+     private class RNVLoadControl extends DefaultLoadControl {
+         private final int availableHeapInBytes;
+         private final Runtime runtime;
+@@ -1469,6 +1473,11 @@ public class ReactExoplayerView extends FrameLayout implements
+         }
+     }
+ 
++    @Override
++    public void onRenderedFirstFrame() {
++        eventEmitter.onRenderedFirstFrame.invoke();
++    }
++
+     private void startProgressHandler() {
+         progressHandler.sendEmptyMessage(SHOW_PROGRESS);
+     }
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerViewManager.kt b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerViewManager.kt
+index b9e0656..0d55a67 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerViewManager.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerViewManager.kt
+@@ -58,6 +58,7 @@ class ReactExoplayerViewManager(private val config: ReactExoplayerConfig) : View
+         private const val PROP_SHOW_NOTIFICATION_CONTROLS = "showNotificationControls"
+         private const val PROP_DEBUG = "debug"
+         private const val PROP_CONTROLS_STYLES = "controlsStyles"
++        private const val PROP_HIDE_SHUTTER_VIEW = "hideShutterView"
+     }
+ 
+     override fun getName(): String = REACT_CLASS
+@@ -241,6 +242,11 @@ class ReactExoplayerViewManager(private val config: ReactExoplayerConfig) : View
+         videoView.setShutterColor(color)
+     }
+ 
++    @ReactProp(name = PROP_HIDE_SHUTTER_VIEW, defaultBoolean = false)
++    fun setHideShutterView(videoView: ReactExoplayerView, hideShutterView: Boolean) {
++        videoView.setHideShutterView(hideShutterView)
++    }
++
+     @ReactProp(name = PROP_SHOW_NOTIFICATION_CONTROLS)
+     fun setShowNotificationControls(videoView: ReactExoplayerView, showNotificationControls: Boolean) {
+         videoView.setShowNotificationControls(showNotificationControls)
+diff --git a/node_modules/react-native-video/android/src/main/res/layout/rnv_exo_player_view_surface.xml b/node_modules/react-native-video/android/src/main/res/layout/rnv_exo_player_view_surface.xml
+new file mode 100644
+index 0000000..4ea3c30
+--- /dev/null
++++ b/node_modules/react-native-video/android/src/main/res/layout/rnv_exo_player_view_surface.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    app:surface_type="surface_view" />
+diff --git a/node_modules/react-native-video/android/src/main/res/layout/rnv_exo_player_view_texture.xml b/node_modules/react-native-video/android/src/main/res/layout/rnv_exo_player_view_texture.xml
+new file mode 100644
+index 0000000..53c1909
+--- /dev/null
++++ b/node_modules/react-native-video/android/src/main/res/layout/rnv_exo_player_view_texture.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    app:surface_type="texture_view" />
+diff --git a/node_modules/react-native-video/lib/types/events.d.ts b/node_modules/react-native-video/lib/types/events.d.ts
+index c24fa11..86f8df0 100644
+--- a/node_modules/react-native-video/lib/types/events.d.ts
++++ b/node_modules/react-native-video/lib/types/events.d.ts
+@@ -228,6 +228,7 @@ export interface ReactVideoEvents {
+     onVolumeChange?: (e: OnVolumeChangeData) => void;
+     onProgress?: (e: OnProgressData) => void;
+     onReadyForDisplay?: () => void;
++    onRenderedFirstFrame?: () => void;
+     onReceiveAdEvent?: (e: OnReceiveAdEventData) => void;
+     onRestoreUserInterfaceForPictureInPictureStop?: () => void;
+     onSeek?: (e: OnSeekData) => void;
+diff --git a/node_modules/react-native-video/src/Video.tsx b/node_modules/react-native-video/src/Video.tsx
+index 82b73ab..1a98c65 100644
+--- a/node_modules/react-native-video/src/Video.tsx
++++ b/node_modules/react-native-video/src/Video.tsx
+@@ -141,6 +141,7 @@ const Video = forwardRef<VideoRef, ReactVideoProps>(
+       onFullscreenPlayerWillDismiss,
+       onFullscreenPlayerDidDismiss,
+       onReadyForDisplay,
++      onRenderedFirstFrame,
+       onPlaybackRateChange,
+       onVolumeChange,
+       onAudioBecomingNoisy,
+@@ -928,6 +929,7 @@ const Video = forwardRef<VideoRef, ReactVideoProps>(
+           onReadyForDisplay={
+             onReadyForDisplay || hasPoster ? _onReadyForDisplay : undefined
+           }
++          onRenderedFirstFrame={onRenderedFirstFrame}
+           onPlaybackRateChange={
+             onPlaybackRateChange ? _onPlaybackRateChange : undefined
+           }
+diff --git a/node_modules/react-native-video/src/specs/VideoNativeComponent.ts b/node_modules/react-native-video/src/specs/VideoNativeComponent.ts
+index 3dcbe01..d3b86bc 100644
+--- a/node_modules/react-native-video/src/specs/VideoNativeComponent.ts
++++ b/node_modules/react-native-video/src/specs/VideoNativeComponent.ts
+@@ -395,6 +395,7 @@ export interface VideoNativeProps extends ViewProps {
+   onVideoFullscreenPlayerWillDismiss?: DirectEventHandler<{}>; // ios, android
+   onVideoFullscreenPlayerDidDismiss?: DirectEventHandler<{}>; // ios, android
+   onReadyForDisplay?: DirectEventHandler<{}>;
++  onRenderedFirstFrame?: DirectEventHandler<{}>;
+   onPlaybackRateChange?: DirectEventHandler<OnPlaybackRateChangeData>; // all
+   onVolumeChange?: DirectEventHandler<OnVolumeChangeData>; // android, ios
+   onVideoExternalPlaybackChange?: DirectEventHandler<OnExternalPlaybackChangeData>;
+diff --git a/node_modules/react-native-video/src/types/events.ts b/node_modules/react-native-video/src/types/events.ts
+index 027fd5b..6e72f66 100644
+--- a/node_modules/react-native-video/src/types/events.ts
++++ b/node_modules/react-native-video/src/types/events.ts
+@@ -257,6 +257,7 @@ export interface ReactVideoEvents {
+   onVolumeChange?: (e: OnVolumeChangeData) => void; //Android, iOS
+   onProgress?: (e: OnProgressData) => void; //All
+   onReadyForDisplay?: () => void; //Android, iOS
++  onRenderedFirstFrame?: () => void; // Android
+   onReceiveAdEvent?: (e: OnReceiveAdEventData) => void; //Android, iOS
+   onRestoreUserInterfaceForPictureInPictureStop?: () => void; //iOS
+   onSeek?: (e: OnSeekData) => void; //Android, iOS, Windows UWP
