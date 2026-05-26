@@ -1,10 +1,11 @@
 import React from 'react';
-import { StyleSheet, Text, type TextProps } from 'react-native';
+import { Text, type TextProps } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
 import LinearGradient from 'react-native-linear-gradient';
 import { Colors } from '../../theme/colors';
+import { styles } from '../../styles/components/common/GradientTextStyles';
 
-type Props = TextProps & { colors?: readonly [string, string, ...string[]] };
+type Props = { colors?: readonly [string, string, ...string[]] } & TextProps;
 
 export function GradientText({
   style,
@@ -28,9 +29,3 @@ export function GradientText({
   );
 }
 
-const styles = StyleSheet.create({
-  text: { backgroundColor: 'transparent' },
-  /** Opaque mask glyph — required for MaskedView on some Android builds. */
-  maskFill: { color: '#000000' },
-  hidden: { opacity: 0 },
-});

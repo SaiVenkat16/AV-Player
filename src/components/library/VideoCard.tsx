@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, Text, View } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors } from '../../theme/colors';
 import { Typography } from '../../theme/typography';
@@ -7,6 +7,8 @@ import type { Video } from '../../types';
 import { formatBytes, formatTime } from '../../utils/formatTime';
 import { toImageSource } from '../../utils/mediaUri';
 import { useLibraryStore } from '../../store/libraryStore';
+import { styles } from '../../styles/components/library/VideoCardStyles';
+
 
 type Props = {
   item: Video;
@@ -114,39 +116,3 @@ export function VideoCard({ item, onOpen, onLongMenu }: Props): React.ReactEleme
   );
 }
 
-const styles = StyleSheet.create({
-  card: { flex: 1, marginBottom: 12 },
-  thumbWrap: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    aspectRatio: 16 / 9,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-  },
-  thumb: { width: '100%', height: '100%' },
-  placeholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  placeholderText: {
-    color: Colors.textMuted,
-  },
-  play: { position: 'absolute', alignSelf: 'center', top: '35%' },
-  dur: {
-    position: 'absolute',
-    right: 8,
-    bottom: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  durT: { color: Colors.textPrimary, fontSize: 10, fontWeight: '700' },
-  title: { color: Colors.textPrimary, marginTop: 10, paddingHorizontal: 4 },
-  meta: { color: Colors.textMuted, marginTop: 2, paddingHorizontal: 4 },
-});

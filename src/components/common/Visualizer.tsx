@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -10,6 +10,7 @@ import Animated, {
 import { Colors } from '../../theme/colors';
 import type { VisualizerStyle } from '../../types';
 import { useSettingsStore } from '../../store/settingsStore';
+import { styles } from '../../styles/components/common/VisualizerStyles';
 
 type Props = {
   isPlaying: boolean;
@@ -19,8 +20,11 @@ type Props = {
 
 const BAR_COUNT = 16;
 
-export function Visualizer({ isPlaying, style, compact }: Props): React.ReactElement {
+export function Visualizer({ isPlaying, style, compact }: Props): React.ReactElement | null {
   const visualizerStyle = useSettingsStore((s) => s.visualizerStyle);
+  if (visualizerStyle === 'none') {
+    return null;
+  }
   return (
     <View style={[styles.row, style]}>
       {Array.from({ length: compact ? 8 : BAR_COUNT }).map((_, i) => (
@@ -67,12 +71,3 @@ function Bar({
   return <Animated.View style={[styles.bar, styleA]} />;
 }
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 48,
-  },
-  bar: { flex: 1, minWidth: 3, marginHorizontal: 1 },
-});

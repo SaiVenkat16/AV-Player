@@ -1,8 +1,9 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Colors } from '../../theme/colors';
 import { Typography } from '../../theme/typography';
 import type { SortMode } from '../../types';
+import { styles } from '../../styles/components/music/SortChipsStyles';
 
 interface SortChipsProps {
   activeSort: SortMode;
@@ -18,7 +19,8 @@ export function SortChips({ activeSort, onSortChange }: SortChipsProps): React.R
         <Pressable
           key={m}
           onPress={() => onSortChange(m)}
-          style={[styles.sortChip, activeSort === m && styles.sortOn]}>
+          style={[styles.sortChip, activeSort === m && styles.sortOn]}
+          hitSlop={8}>
           <Text style={[Typography.caption, { color: activeSort === m ? Colors.textPrimary : Colors.textMuted }]}>
             {m.toUpperCase()}
           </Text>
@@ -28,16 +30,3 @@ export function SortChips({ activeSort, onSortChange }: SortChipsProps): React.R
   );
 }
 
-const styles = StyleSheet.create({
-  sortRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, marginBottom: 6 },
-  sortChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginRight: 6,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: Colors.glassBorder,
-  },
-  sortOn: { backgroundColor: 'rgba(168,85,247,0.2)' },
-});

@@ -1,12 +1,13 @@
 import React from 'react';
-import { Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Image, Pressable, Text, View } from 'react-native';
 import { AutoDragSortableView } from 'react-native-drag-sort';
 import { BottomSheet } from '../common/BottomSheet';
-import { Colors } from '../../theme/colors';
 import { Typography } from '../../theme/typography';
 import { formatTime } from '../../utils/formatTime';
 import { toImageSource } from '../../utils/mediaUri';
 import type { Song } from '../../types';
+import { styles } from '../../styles/components/player/QueueSheetStyles';
+
 
 interface QueueSheetProps {
   visible: boolean;
@@ -27,7 +28,7 @@ export function QueueSheet({
 
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Queue" heightFraction={0.65}>
-      <Pressable onPress={onClearQueue} style={styles.clearBtn}>
+      <Pressable onPress={onClearQueue} style={styles.clearBtn} hitSlop={12}>
         <Text style={[Typography.subtitle, styles.clearText]}>Clear queue</Text>
       </Pressable>
       <AutoDragSortableView
@@ -62,14 +63,3 @@ export function QueueSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  clearBtn: { paddingVertical: 8, marginBottom: 8 },
-  qRow: { flexDirection: 'row', alignItems: 'center', height: 56 },
-  qArt: { width: 32, height: 32, borderRadius: 8, marginRight: 10, backgroundColor: Colors.surface },
-  clearText: { color: Colors.danger },
-  qArtPlaceholder: { backgroundColor: Colors.surfaceElevated },
-  qMeta: { flex: 1 },
-  qTitle: { color: Colors.textPrimary },
-  qArtist: { color: Colors.textMuted },
-  qDuration: { color: Colors.textMuted },
-});

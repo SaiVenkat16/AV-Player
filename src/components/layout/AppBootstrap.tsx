@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { StatusBar, StyleSheet, Text, View } from 'react-native';
-import LottieView from 'lottie-react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Easing, StatusBar, Text, View } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootNavigator } from '../../navigation/RootNavigator';
 import { PlayerBootstrap } from '../player/PlayerBootstrap';
 import { ThemedAlertProvider } from '../common/ThemedAlertProvider';
@@ -9,22 +9,47 @@ import { PermissionScreen } from '../../screens/PermissionScreen';
 import { requestStoragePermission } from '../../services/StorageScanner';
 import { useLibraryStore } from '../../store/libraryStore';
 import { usePlayerStore } from '../../store/playerStore';
-import { Colors } from '../../theme/colors';
 import { Typography } from '../../theme/typography';
 import { showThemedAlert } from '../../utils/themedAlert';
 import { Logger } from '../../utils/logger';
+import { migrateAsyncStorageToMMKV } from '../../utils/storageMigration';
+import { SkeletonLoader } from '../library/SkeletonLoader';
+import { styles } from '../../styles/components/layout/AppBootstrapStyles';
+import { VideoPlayerOverlay } from '../../screens/video/VideoPlayerScreen';
 
 export function AppBootstrap(): React.ReactElement {
   const [allowed, setAllowed] = useState(false);
   const [checked, setChecked] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [playerHydrated, setPlayerHydrated] = useState(false);
+  const spin = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 1400,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [spin]);
+
+  const rotate = spin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
   const scanProgress = useLibraryStore(s => s.scanProgress);
   const isLoaded = useLibraryStore(s => s.isLoaded);
   const songs = useLibraryStore(s => s.songs);
   const scanLibrary = useLibraryStore(s => s.scanLibrary);
 
   useEffect(() => {
+    // Migrate AsyncStorage → MMKV on first launch after update
+    migrateAsyncStorageToMMKV().catch(() => {});
+
     const unsubLib = useLibraryStore.persist.onFinishHydration(() =>
       setHydrated(true),
     );
@@ -59,11 +84,14 @@ export function AppBootstrap(): React.ReactElement {
         setAllowed(ok);
         setChecked(true);
 
-        // Only scan if not already loaded or if library is empty
-        if (ok && (!isLoaded || songs.length === 0)) {
-          Logger.info('AppBootstrap', 'Starting library scan');
-          await scanLibrary();
-          Logger.info('AppBootstrap', 'Library scan completed');
+        // Only scan if library is empty (first time)
+        // User can pull-to-refresh to rescan manually
+        if (ok) {
+          if (!isLoaded || songs.length === 0) {
+            Logger.info('AppBootstrap', 'Starting initial library scan');
+            await scanLibrary();
+            Logger.info('AppBootstrap', 'Library scan completed');
+          }
         } else if (!ok) {
           Logger.warn('AppBootstrap', 'Storage permission denied');
           useLibraryStore.setState({ isLoaded: true, isScanning: false });
@@ -136,18 +164,22 @@ export function AppBootstrap(): React.ReactElement {
           style={[styles.scan, styles.scanInner]}
         >
           <ErrorBoundary>
-            <LottieView
-              source={require('../../../assets/animations/scan.json')}
-              autoPlay
-              loop
-              style={styles.lottie}
-            />
+            <Animated.View
+              style={[styles.lottie, { transform: [{ rotate }] }]}
+            >
+              <Icon name="sync" size={96} color="#1DB954" />
+            </Animated.View>
             <Text style={[Typography.title, styles.scanTitle]}>
               Indexing your library
             </Text>
             <Text style={[Typography.body, styles.scanCount]}>
               {scanProgress} files discovered
             </Text>
+            <View style={styles.skeletonContainer}>
+              <SkeletonLoader height={24} />
+              <SkeletonLoader height={14} />
+              <SkeletonLoader height={14} />
+            </View>
           </ErrorBoundary>
         </View>
       </>
@@ -158,6 +190,7 @@ export function AppBootstrap(): React.ReactElement {
         <>
           <RootNavigator />
           <PlayerBootstrap />
+          <VideoPlayerOverlay />
         </>
       </ErrorBoundary>
     );
@@ -173,16 +206,3 @@ export function AppBootstrap(): React.ReactElement {
   );
 }
 
-const styles = StyleSheet.create({
-  boot: { flex: 1, backgroundColor: Colors.background },
-  scan: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.background,
-  },
-  scanInner: { paddingHorizontal: 16 },
-  lottie: { width: 180, height: 180 },
-  scanTitle: { color: Colors.textPrimary, marginTop: 12 },
-  scanCount: { color: Colors.textSecondary, marginTop: 6 },
-});

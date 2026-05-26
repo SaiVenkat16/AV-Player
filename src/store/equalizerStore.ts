@@ -1,8 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { EqualizerService } from '../services/EqualizerService';
 import { STORAGE_KEYS } from '../utils/constants';
+import { mmkv, mmkvZustandStorage } from '../utils/mmkvStorage';
 
 export interface EqBand {
   hz: number;
@@ -90,7 +90,7 @@ export const useEqualizerStore = create<EqualizerState>()(
         EqualizerService.setSurround(surroundMode);
       },
       saveCustomPreset: () => {
-        AsyncStorage.setItem(
+        mmkv.set(
           `${STORAGE_KEYS.eq}:custom`,
           JSON.stringify(get().bands.map((b) => b.gain)),
         );
@@ -99,7 +99,7 @@ export const useEqualizerStore = create<EqualizerState>()(
     }),
     {
       name: STORAGE_KEYS.eq,
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => mmkvZustandStorage),
       onRehydrateStorage: () => (state) => {
         if (state?.isEnabled) {
           pushToDevice(state.bands, state.bassBoost, state.surroundMode);

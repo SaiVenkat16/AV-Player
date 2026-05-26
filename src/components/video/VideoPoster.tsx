@@ -1,5 +1,6 @@
 import React from 'react';
-import { Image, StyleSheet } from 'react-native';
+import { Image } from 'react-native';
+import { styles } from '../../styles/components/video/VideoPosterStyles';
 
 interface VideoPosterProps {
   source: any;
@@ -17,13 +18,3 @@ export const VideoPoster: React.FC<VideoPosterProps> = ({ source, visible }) => 
   );
 };
 
-const styles = StyleSheet.create({
-  poster: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 10,
-  },
-});

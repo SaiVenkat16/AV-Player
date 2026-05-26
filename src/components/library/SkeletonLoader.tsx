@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -7,7 +6,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { Colors } from '../../theme/colors';
+import { styles } from '../../styles/components/library/SkeletonLoaderStyles';
 
 export function SkeletonLoader({ height = 14 }: { height?: number }): React.ReactElement {
   const o = useSharedValue(0.35);
@@ -21,11 +20,3 @@ export function SkeletonLoader({ height = 14 }: { height?: number }): React.Reac
   const style = useAnimatedStyle(() => ({ opacity: o.value }));
   return <Animated.View style={[styles.box, { height }, style]} />;
 }
-
-const styles = StyleSheet.create({
-  box: {
-    borderRadius: 10,
-    backgroundColor: Colors.surfaceElevated,
-    overflow: 'hidden',
-  },
-});

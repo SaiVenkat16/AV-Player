@@ -1,9 +1,11 @@
 import React, { useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors } from '../../theme/colors';
 import { AnimatedPressable } from '../common/AnimatedPressable';
 import { usePlayerStore } from '../../store/playerStore';
+import { styles } from '../../styles/components/player/PlayerControlsStyles';
+
 
 export function PlayerControls(): React.ReactElement {
   const toggle = usePlayerStore((s) => s.togglePlay);
@@ -74,25 +76,3 @@ export function PlayerControls(): React.ReactElement {
   );
 }
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 18,
-    paddingHorizontal: 8,
-  },
-  side: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  play: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.accent1,
-    shadowColor: Colors.accent1,
-    shadowOpacity: 0.55,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-});

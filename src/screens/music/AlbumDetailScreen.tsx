@@ -1,90 +1,248 @@
-import React, { useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { SongRow } from '../../components/library/SongRow';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors } from '../../theme/colors';
-import { Typography } from '../../theme/typography';
 import type { MusicStackParamList } from '../../navigation/MusicStack';
+import type { Song } from '../../types';
 import { useLibraryStore, getAlbumsFromSongs } from '../../store/libraryStore';
 import { usePlayerStore } from '../../store/playerStore';
+import { useBottomPadding } from '../../hooks/useBottomPadding';
+import { toImageSource } from '../../utils/mediaUri';
 
 type Nav = NativeStackNavigationProp<MusicStackParamList>;
 type R = RouteProp<MusicStackParamList, 'AlbumDetail'>;
 
 export function AlbumDetailScreen(): React.ReactElement {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const route = useRoute<R>();
+  const bottomPadding = useBottomPadding();
   const songs = useLibraryStore((s) => s.songs);
-  const album = useMemo(
-    () => getAlbumsFromSongs(songs).find((a) => a.id === route.params.albumId),
-    [songs, route.params.albumId],
-  );
-  const list = useMemo(
-    () => (album ? songs.filter((s) => album.songIds.includes(s.id)) : []),
-    [album, songs],
-  );
-  const playSong = usePlayerStore((s) => s.playSong);
-  const current = usePlayerStore((s) => s.currentSong);
-  const playing = usePlayerStore((s) => s.isPlaying);
-  const addQueue = usePlayerStore((s) => s.addToQueue);
-  const addRecent = useLibraryStore((s) => s.addRecentlyPlayed);
+  const privateIds = useLibraryStore((s) => s.privateIds);
   const favoriteIds = useLibraryStore((s) => s.favorites);
   const toggleFavorite = useLibraryStore((s) => s.toggleFavorite);
-  const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+
+  const visibleSongs = useMemo(() => songs.filter((s) => !privateIds.includes(s.id)), [songs, privateIds]);
+
+  const album = useMemo(
+    () => getAlbumsFromSongs(visibleSongs).find((a) => a.id === route.params.albumId),
+    [visibleSongs, route.params.albumId],
+  );
+  const list = useMemo(
+    () => (album ? visibleSongs.filter((s) => album.songIds.includes(s.id)) : []),
+    [album, visibleSongs],
+  );
+
+  const playSong = usePlayerStore((s) => s.playSong);
+  const current = usePlayerStore((s) => s.currentSong);
+  const addRecent = useLibraryStore((s) => s.addRecentlyPlayed);
+
+  const [menuSong, setMenuSong] = useState<Song | null>(null);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+
   if (!album) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.notFoundText}>Album not found</Text>
-        <Pressable onPress={() => navigation.goBack()}>
-          <Text style={styles.backLinkText}>Back</Text>
+      <View style={s.center}>
+        <Text style={s.notFoundText}>Album not found</Text>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
+          <Text style={s.backLinkText}>Back</Text>
         </Pressable>
       </View>
     );
   }
+
   return (
-    <View style={styles.root}>
-      <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
-        <Text style={[Typography.subtitle, styles.backButtonText]}>‹ Back</Text>
-      </Pressable>
-      <Text style={[Typography.hero, styles.t]}>{album.name}</Text>
-      <Text style={[Typography.body, styles.artistName]}>{album.artist}</Text>
-      <FlashList
+    <View style={s.root}>
+      {/* Header: back arrow + album name center */}
+      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={12}>
+          <MaterialCommunityIcons name="chevron-left" size={28} color={Colors.textPrimary} />
+        </Pressable>
+        <View style={s.headerCenter}>
+          <Text numberOfLines={1} style={s.headerTitle}>{album.name}</Text>
+        </View>
+        <Pressable onPress={() => {
+          if (list.length > 0) {
+            playSong(list[0], list);
+            addRecent(list[0].id);
+            navigation.navigate('NowPlaying');
+          }
+        }} hitSlop={12}>
+          <Text style={s.playAllText}>Play all</Text>
+        </Pressable>
+      </View>
+
+      {/* Song list */}
+      <FlashList showsVerticalScrollIndicator={false}
         data={list}
         estimatedItemSize={64}
-        keyExtractor={(s) => s.id}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingBottom: bottomPadding }}
         renderItem={({ item }) => (
-          <SongRow
-            song={item}
-            active={current?.id === item.id}
-            playing={playing}
+          <Pressable
+            style={s.songRow}
             onPress={() => {
               playSong(item, list);
               addRecent(item.id);
               navigation.navigate('NowPlaying');
             }}
-            onAddQueue={() => addQueue(item)}
-            rightAction={{
-              icon: favoriteSet.has(item.id) ? 'heart' : 'heart-outline',
-              backgroundColor: favoriteSet.has(item.id) ? Colors.danger : Colors.accent1,
-              onPress: () => toggleFavorite(item.id),
-            }}
-          />
+          >
+            {item.albumArt ? (
+              <Image source={toImageSource(item.albumArt)} style={s.songThumb} />
+            ) : (
+              <View style={[s.songThumb, s.songThumbPlaceholder]}>
+                <MaterialCommunityIcons name="album" size={24} color={Colors.textMuted} />
+              </View>
+            )}
+            <View style={s.songMeta}>
+              <Text numberOfLines={1} style={[s.songTitle, current?.id === item.id && s.songTitleActive]}>
+                {item.title}
+              </Text>
+              <Text numberOfLines={1} style={s.songArtist}>{item.artist}</Text>
+            </View>
+            <Pressable hitSlop={12} onPress={(e) => {
+              setMenuPosition({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY });
+              setMenuSong(item);
+            }}>
+              <MaterialCommunityIcons name="dots-vertical" size={20} color={Colors.textMuted} />
+            </Pressable>
+          </Pressable>
         )}
       />
+
+      {/* Small popup menu */}
+      <Modal
+        visible={menuSong !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuSong(null)}
+      >
+        <Pressable style={s.modalBackdrop} onPress={() => setMenuSong(null)}>
+          <View style={[s.miniModal, { top: menuPosition.y - 10 }]}>
+            <Pressable style={s.miniModalItem} onPress={() => { if (menuSong) toggleFavorite(menuSong.id); setMenuSong(null); }}>
+              <Text style={s.miniModalText}>
+                {menuSong && favoriteIds.includes(menuSong.id) ? 'Remove from favorites' : 'Add to favorites'}
+              </Text>
+            </Pressable>
+            <Pressable style={s.miniModalItem} onPress={() => { if (menuSong) { playSong(menuSong, [menuSong]); addRecent(menuSong.id); navigation.navigate('NowPlaying'); } setMenuSong(null); }}>
+              <Text style={s.miniModalText}>Play next</Text>
+            </Pressable>
+            <Pressable style={s.miniModalItem} onPress={() => { if (menuSong) useLibraryStore.getState().togglePrivateId(menuSong.id); setMenuSong(null); }}>
+              <Text style={s.miniModalText}>Move to private</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  t: { color: Colors.textPrimary, marginLeft: 16, marginTop: 8 },
   notFoundText: { color: Colors.textSecondary },
   backLinkText: { color: Colors.accent2, marginTop: 12 },
-  backButton: { padding: 16 },
-  backButtonText: { color: Colors.accent2 },
-  artistName: { color: Colors.textMuted, marginLeft: 16 },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.glassBorder,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    color: Colors.textPrimary,
+    fontSize: 17,
+    fontFamily: 'Poppins-Bold',
+  },
+  playAllText: {
+    color: Colors.accent1,
+    fontSize: 14,
+    fontFamily: 'Poppins-Bold',
+    paddingHorizontal: 8,
+  },
+  headerSub: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  // Song rows
+  songRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  songThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: Colors.surface,
+  },
+  songThumbPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceElevated,
+  },
+  songMeta: { flex: 1 },
+  songTitle: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontFamily: 'Poppins-SemiBold',
+  },
+  songTitleActive: {
+    color: Colors.accent1,
+  },
+  songArtist: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  // Popup menu
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  miniModal: {
+    position: 'absolute',
+    right: 16,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    width: 200,
+    overflow: 'hidden',
+    elevation: 8,
+  },
+  miniModalItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  miniModalText: {
+    color: Colors.textPrimary,
+    fontSize: 15,
+    fontFamily: 'Poppins-Medium',
+  },
 });
+
+

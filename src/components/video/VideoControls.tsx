@@ -6,12 +6,13 @@ import LinearGradient from 'react-native-linear-gradient';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
   runOnJS,
 } from 'react-native-reanimated';
 import { Colors } from '../../theme/colors';
 import { Typography } from '../../theme/typography';
 import { formatTime } from '../../utils/formatTime';
+import { styles } from '../../styles/components/video/VideoControlsStyles';
 
 type Props = {
   title: string;
@@ -101,7 +102,7 @@ export function VideoControls({
       : prog * 100;
     return {
       left: `${left}%`,
-      transform: [{ scale: withSpring(isDragging.value ? 1.25 : 1) }],
+      transform: [{ scale: withTiming(isDragging.value ? 1.25 : 1, { duration: 150 }) }],
     };
   });
 
@@ -123,20 +124,25 @@ export function VideoControls({
   return (
     <View style={styles.overlay}>
       <View style={styles.top}>
-        <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" onPress={onBack} />
+        <Pressable onPress={onBack} hitSlop={12}>
+          <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" />
+        </Pressable>
         <Text numberOfLines={1} style={[Typography.subtitle, styles.title]}>
           {title}
         </Text>
         {onSubtitlesPress && (
-          <MaterialCommunityIcons
-            name="closed-caption"
-            size={24}
-            color="#fff"
-            style={styles.ccIcon}
-            onPress={onSubtitlesPress}
-          />
+          <Pressable onPress={onSubtitlesPress} hitSlop={12}>
+            <MaterialCommunityIcons
+              name="closed-caption"
+              size={24}
+              color="#fff"
+              style={styles.ccIcon}
+            />
+          </Pressable>
         )}
-        <MaterialCommunityIcons name="dots-vertical" size={22} color="#fff" onPress={() => {}} />
+        <Pressable onPress={() => {}} hitSlop={12}>
+          <MaterialCommunityIcons name="dots-vertical" size={22} color="#fff" />
+        </Pressable>
       </View>
       <Pressable style={styles.center} onPress={onToggle}>
         <MaterialCommunityIcons name={paused ? 'play' : 'pause'} size={64} color="#fff" />
@@ -167,96 +173,31 @@ export function VideoControls({
           {formatTime(position)} / {formatTime(duration)}
         </Text>
         <View style={styles.row}>
-          <MaterialCommunityIcons name="rewind-10" size={22} color="#fff" onPress={() => onSeek(-10)} />
-          <MaterialCommunityIcons name="fast-forward-10" size={22} color="#fff" onPress={() => onSeek(10)} />
-          <Text style={[Typography.caption, styles.badge]} onPress={onRate}>
-            {rate}x
-          </Text>
-          <Text style={[Typography.caption, styles.badge]} onPress={onResize}>
-            {resize}
-          </Text>
-          <MaterialCommunityIcons name="picture-in-picture-bottom-right" size={22} color="#fff" onPress={onPip} />
-          <MaterialCommunityIcons name="lock-outline" size={22} color="#fff" onPress={onLock} />
+          <Pressable onPress={() => onSeek(-10)} hitSlop={12}>
+            <MaterialCommunityIcons name="rewind-10" size={22} color="#fff" />
+          </Pressable>
+          <Pressable onPress={() => onSeek(10)} hitSlop={12}>
+            <MaterialCommunityIcons name="fast-forward-10" size={22} color="#fff" />
+          </Pressable>
+          <Pressable onPress={onRate} hitSlop={12}>
+            <Text style={[Typography.caption, styles.badge]}>
+              {rate}x
+            </Text>
+          </Pressable>
+          <Pressable onPress={onResize} hitSlop={12}>
+            <Text style={[Typography.caption, styles.badge]}>
+              {resize}
+            </Text>
+          </Pressable>
+          <Pressable onPress={onPip} hitSlop={12}>
+            <MaterialCommunityIcons name="picture-in-picture-bottom-right" size={22} color="#fff" />
+          </Pressable>
+          <Pressable onPress={onLock} hitSlop={12}>
+            <MaterialCommunityIcons name="lock-outline" size={22} color="#fff" />
+          </Pressable>
         </View>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: 'space-between',
-    zIndex: 50,
-    elevation: 50,
-  },
-  lockedOverlay: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingBottom: 36,
-    zIndex: 50,
-    elevation: 50,
-  },
-  lockedButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  lockedText: { color: '#fff', marginLeft: 8 },
-  top: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  ccIcon: {
-    marginRight: 16,
-  },
-  title: { color: '#fff', flex: 1, marginHorizontal: 8 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  bottom: { padding: 12, backgroundColor: 'rgba(0,0,0,0.45)' },
-  time: { color: '#e2e8f0', marginBottom: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badge: { color: Colors.accent2, paddingHorizontal: 8 },
-  seekerContainer: {
-    width: '100%',
-    marginBottom: 8,
-  },
-  touchArea: {
-    height: 24,
-    justifyContent: 'center',
-    width: '100%',
-  },
-  track: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    overflow: 'hidden',
-  },
-  played: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  thumb: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    marginLeft: -10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  thumbInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: Colors.accent1,
-  },
-});

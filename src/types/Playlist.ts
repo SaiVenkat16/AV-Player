@@ -21,4 +21,4 @@ export interface Artist {
 
 export type SortMode = 'az' | 'date' | 'duration' | 'artist';
 
-export type VisualizerStyle = 'bars' | 'rings' | 'particles' | 'wave';
+export type VisualizerStyle = 'bars' | 'rings' | 'particles' | 'wave' | 'none';

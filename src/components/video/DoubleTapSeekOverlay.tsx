@@ -1,6 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { styles } from '../../styles/components/video/DoubleTapSeekOverlayStyles';
+
 
 interface DoubleTapSeekOverlayProps {
   side: 'left' | 'right' | null;
@@ -20,29 +22,3 @@ export const DoubleTapSeekOverlay: React.FC<DoubleTapSeekOverlayProps> = ({ side
   );
 };
 
-const styles = StyleSheet.create({
-  doubleTapIndicator: {
-    position: 'absolute',
-    top: '50%',
-    marginTop: -40,
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 40,
-  },
-  doubleTapLeft: {
-    left: '15%',
-  },
-  doubleTapRight: {
-    right: '15%',
-  },
-  doubleTapText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginTop: 4,
-  },
-});

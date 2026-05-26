@@ -1,0 +1,75 @@
+import { StyleSheet } from 'react-native';
+import { Colors } from '../../../theme/colors';
+
+export const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: Colors.background },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  centerAbsolute: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  left: { flex: 1 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  iconBtn: { padding: 6 },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  statsText: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontFamily: 'Poppins-SemiBold',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  listContent: { paddingHorizontal: 12, paddingTop: 4 },
+  cardWrapper: { flex: 1, margin: 6 },
+  empty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+    gap: 12,
+  },
+  emptyText: { color: Colors.textSecondary, fontSize: 16, fontFamily: 'Poppins-SemiBold' },
+  emptyBtn: {
+    marginTop: 8,
+    backgroundColor: Colors.accent1,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  emptyBtnText: { color: '#fff', fontFamily: 'Poppins-Bold', fontSize: 14 },
+});
+

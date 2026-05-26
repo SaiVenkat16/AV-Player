@@ -45,6 +45,7 @@ export async function setupAudio(): Promise<void> {
           progressUpdateEventInterval: 1,
         });
         setupDone = true;
+        await TrackPlayer.setVolume(1);
         Logger.info('AudioService', 'Audio setup complete');
       } catch (err) {
         Logger.error('AudioService', 'Failed to setup audio', err);
@@ -118,22 +119,43 @@ export async function setShuffleMode(
   library: Song[],
 ): Promise<void> {
   await setupAudio();
-  const curState = await TrackPlayer.getPlaybackState();
-  const curPosition = await TrackPlayer.getPosition();
-  const cur = await TrackPlayer.getActiveTrack();
-  if (!cur?.id) {
-    return;
-  }
-  const idx = library.findIndex(s => s.id === cur.id);
-  if (idx < 0) {
-    return;
-  }
-  await loadQueue(library, idx, on);
-  await TrackPlayer.seekTo(curPosition);
-  
-  const wasPlaying = curState.state === State.Playing || curState.state === State.Buffering;
-  if (wasPlaying) {
-    await TrackPlayer.play();
+  try {
+    const currentIndex = await TrackPlayer.getActiveTrackIndex();
+    if (currentIndex == null || currentIndex < 0) return;
+    
+    const queue = await TrackPlayer.getQueue();
+    if (queue.length <= 1) return;
+
+    // Get indices of tracks after current
+    const afterIndices: number[] = [];
+    for (let i = queue.length - 1; i > currentIndex; i--) {
+      afterIndices.push(i);
+    }
+    
+    if (afterIndices.length === 0) return;
+
+    // Remove tracks after current
+    await TrackPlayer.remove(afterIndices);
+
+    // Get the removed tracks
+    const afterTracks = afterIndices.reverse().map(i => queue[i]).filter(Boolean);
+
+    // Re-add in shuffled or original order
+    let reordered;
+    if (on) {
+      reordered = [...afterTracks].sort(() => Math.random() - 0.5);
+    } else {
+      // Restore original library order
+      const trackIds = new Set(afterTracks.map(t => t.id));
+      const libOrder = library.filter(s => trackIds.has(s.id));
+      reordered = libOrder.map(s => afterTracks.find(t => t.id === s.id)!).filter(Boolean);
+    }
+
+    if (reordered.length > 0) {
+      await TrackPlayer.add(reordered);
+    }
+  } catch {
+    // Silently fail - don't interrupt playback
   }
 }
 

@@ -1,5 +1,12 @@
 import { PermissionsAndroid, Platform } from 'react-native';
-import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import {
+  check,
+  request,
+  PERMISSIONS,
+  RESULTS,
+  checkNotifications,
+  requestNotifications,
+} from 'react-native-permissions';
 import { Logger } from '../utils/logger';
 
 async function ensureAndroidPermissions(
@@ -78,9 +85,16 @@ export async function ensurePlaybackNotificationPermission(): Promise<boolean> {
     return true;
   }
 
-  return ensureAndroidPermissions(
-    [ANDROID_POST_NOTIFICATIONS],
-    'notification permission',
-  );
+  try {
+    const { status: checkStatus } = await checkNotifications();
+    if (checkStatus === RESULTS.GRANTED) {
+      return true;
+    }
+    const { status: requestStatus } = await requestNotifications();
+    return requestStatus === RESULTS.GRANTED;
+  } catch (error) {
+    Logger.warn('PermissionService', 'Failed to request notification permission', error);
+    return false;
+  }
 }
-const ANDROID_POST_NOTIFICATIONS = 'android.permission.POST_NOTIFICATIONS';
+

@@ -447,3 +447,81 @@ index 027fd5b..6e72f66 100644
    onReceiveAdEvent?: (e: OnReceiveAdEventData) => void; //Android, iOS
    onRestoreUserInterfaceForPictureInPictureStop?: () => void; //iOS
    onSeek?: (e: OnSeekData) => void; //Android, iOS, Windows UWP
+
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
+index 806c81f..b9f3e21 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
+@@ -336,6 +336,13 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+                 playerView.requestLayout()
+                 requestLayout()
+             }
++
++            // ExoPlayer keeps a black shutter until the first frame; on some devices (e.g. Moto)
++            // it never hides even while audio plays — force-hide after the first rendered frame.
++            if (events.contains(Player.EVENT_RENDERED_FIRST_FRAME)) {
++                playerView.findViewById<View>(androidx.media3.ui.R.id.exo_shutter)?.visibility =
++                    View.GONE
++            }
+         }
+     }
+
+diff --git a/node_modules/react-native-video/lib/Video.js b/node_modules/react-native-video/lib/Video.js
+index 3ec75c5..fcd7fc7 100644
+--- a/node_modules/react-native-video/lib/Video.js
++++ b/node_modules/react-native-video/lib/Video.js
+@@ -483,10 +483,11 @@ const Video = (0, react_1.forwardRef)(({ source, style, resizeMode, poster, post
+             _posterResizeMode = posterResizeMode;
+         }
+         // poster style
+-        const baseStyle = {
+-            ...react_native_1.StyleSheet.absoluteFillObject,
+-            resizeMode: _posterResizeMode,
+-        };
++        const baseStyle = [
++            react_native_1.StyleSheet.absoluteFill,
++            { resizeMode: _posterResizeMode },
++        ];
+         let posterStyle = baseStyle;
+         if (!isPosterDeprecated && poster?.style) {
+             const styles = Array.isArray(poster.style)
+@@ -517,9 +518,7 @@ const Video = (0, react_1.forwardRef)(({ source, style, resizeMode, poster, post
+         source,
+         resizeMode,
+     ]);
+-    const _style = (0, react_1.useMemo)(() => ({
+-        ...react_native_1.StyleSheet.absoluteFillObject,
+-    }), []);
++    const _style = (0, react_1.useMemo)(() => react_native_1.StyleSheet.absoluteFill, []);
+     return (react_1.default.createElement(react_native_1.View, { style: style },
+         react_1.default.createElement(VideoNativeComponent_1.default, { ref: nativeRef, ...rest, src: src, style: _style, resizeMode: resizeMode, restoreUserInterfaceForPIPStopCompletionHandler: _restoreUserInterfaceForPIPStopCompletionHandler, selectedTextTrack: _selectedTextTrack, selectedAudioTrack: _selectedAudioTrack, selectedVideoTrack: _selectedVideoTrack, shutterColor: _shutterColor, onGetLicense: usingExternalGetLicense ? onGetLicense : undefined, onVideoLoad: onLoad || hasPoster
+                 ? onVideoLoad
+diff --git a/node_modules/react-native-video/src/Video.tsx b/node_modules/react-native-video/src/Video.tsx
+index 82b73ab..765dd33 100644
+--- a/node_modules/react-native-video/src/Video.tsx
++++ b/node_modules/react-native-video/src/Video.tsx
+@@ -814,10 +814,11 @@ const Video = forwardRef<VideoRef, ReactVideoProps>(
+       }
+ 
+       // poster style
+-      const baseStyle: StyleProp<ImageStyle> = {
+-        ...StyleSheet.absoluteFillObject,
+-        resizeMode: _posterResizeMode,
+-      };
++      const baseStyle: StyleProp<ImageStyle> = [
++        StyleSheet.absoluteFill,
++        {resizeMode: _posterResizeMode},
++      ];
+ 
+       let posterStyle: StyleProp<ImageStyle> = baseStyle;
+ 
+@@ -867,9 +868,7 @@ const Video = forwardRef<VideoRef, ReactVideoProps>(
+     ]);
+ 
+     const _style: StyleProp<ViewStyle> = useMemo(
+-      () => ({
+-        ...StyleSheet.absoluteFillObject,
+-      }),
++      () => StyleSheet.absoluteFill,
+       [],
+     );

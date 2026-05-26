@@ -1,425 +1,470 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  Alert,
+  Dimensions,
+  FlatList,
   Image,
+  Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
-  useWindowDimensions,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import LinearGradient from 'react-native-linear-gradient';
 import { BluetoothSheet } from '../../components/bluetooth/BluetoothSheet';
-import { SongRow } from '../../components/library/SongRow';
-import { AlbumCard } from '../../components/library/AlbumCard';
-import { MusicHeader } from '../../components/music/MusicHeader';
 import { Colors } from '../../theme/colors';
 import type { MusicStackParamList } from '../../navigation/MusicStack';
 import { useBluetoothPoll } from '../../hooks/useBluetooth';
-import { useLibraryStore, getAlbumsFromSongs, getArtistsFromSongs } from '../../store/libraryStore';
+import { getAlbumsFromSongs, useLibraryStore } from '../../store/libraryStore';
+import { useLibrary } from '../../hooks/useLibrary';
 import { usePlayerStore } from '../../store/playerStore';
-import type { Song, Album, Artist } from '../../types';
+import { useSearchStore } from '../../store/searchStore';
+import type { Song } from '../../types';
 import { sortSongs } from '../../utils/musicUtils';
 import { toImageSource } from '../../utils/mediaUri';
+import { formatTime } from '../../utils/formatTime';
+import { useBottomPadding } from '../../hooks/useBottomPadding';
+import { HomeHeader } from '../../components/layout/HomeHeader';
 
 type Nav = NativeStackNavigationProp<MusicStackParamList>;
-type Tab = 'songs' | 'albums' | 'artists' | 'categories';
 
-// ─── Category type ────────────────────────────────────────────────────────────
-type CategoryGroup = {
-  key: string;
-  label: string;
-  icon: string;
-  color: string[];
-  songs: Song[];
-};
-
-function buildCategories(songs: Song[]): CategoryGroup[] {
-  const genreMap = new Map<string, Song[]>();
-  const moodMap = new Map<string, Song[]>();
-
-  for (const s of songs) {
-    const genre = s.genre?.trim() || 'Unknown';
-    if (!genreMap.has(genre)) genreMap.set(genre, []);
-    genreMap.get(genre)!.push(s);
-
-    const mood = s.mood?.trim() || 'Chill';
-    if (!moodMap.has(mood)) moodMap.set(mood, []);
-    moodMap.get(mood)!.push(s);
-  }
-
-  const moodMeta: Record<string, { icon: string; color: string[] }> = {
-    Energetic: { icon: 'lightning-bolt', color: ['#F59E0B', '#EF4444'] },
-    Chill: { icon: 'weather-sunset', color: ['#06B6D4', '#3B82F6'] },
-    Happy: { icon: 'emoticon-happy-outline', color: ['#10B981', '#34D399'] },
-    Sad: { icon: 'weather-rainy', color: ['#6366F1', '#8B5CF6'] },
-    Focus: { icon: 'brain', color: ['#A855F7', '#6366F1'] },
-    Party: { icon: 'party-popper', color: ['#EC4899', '#F59E0B'] },
-  };
-
-  const categories: CategoryGroup[] = [];
-
-  // Add mood groups
-  for (const [mood, list] of moodMap.entries()) {
-    const meta = moodMeta[mood] ?? { icon: 'music-note', color: ['#64748B', '#475569'] };
-    categories.push({
-      key: `mood:${mood}`,
-      label: mood,
-      icon: meta.icon,
-      color: meta.color,
-      songs: list,
-    });
-  }
-
-  // Add genre groups (if not trivial)
-  for (const [genre, list] of genreMap.entries()) {
-    if (genre === 'Unknown') continue;
-    categories.push({
-      key: `genre:${genre}`,
-      label: genre,
-      icon: 'music-circle-outline',
-      color: ['#475569', '#334155'],
-      songs: list,
-    });
-  }
-
-  return categories.sort((a, b) => b.songs.length - a.songs.length);
-}
-
-// ─── Tab bar ──────────────────────────────────────────────────────────────────
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'songs', label: 'Songs', icon: 'music-note' },
-  { key: 'albums', label: 'Albums', icon: 'album' },
-  { key: 'artists', label: 'Artists', icon: 'account-music' },
-  { key: 'categories', label: 'Categories', icon: 'tag-multiple' },
-];
-
-function TabBar({
-  active,
-  onChange,
-}: {
-  active: Tab;
-  onChange: (t: Tab) => void;
-}) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.tabBarScroll}
-      contentContainerStyle={styles.tabBarContent}>
-      {TABS.map((t) => {
-        const isActive = t.key === active;
-        return (
-          <Pressable key={t.key} style={styles.tabItem} onPress={() => onChange(t.key)}>
-            <MaterialCommunityIcons
-              name={t.icon}
-              size={16}
-              color={isActive ? Colors.accent1 : Colors.textMuted}
-            />
-            <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-              {t.label}
-            </Text>
-            {isActive && <View style={styles.tabUnderline} />}
-          </Pressable>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
-// ─── Artist Row ───────────────────────────────────────────────────────────────
-function ArtistRow({
-  artist,
-  songs,
-  onPress,
-}: {
-  artist: Artist;
-  songs: Song[];
-  onPress: () => void;
-}) {
-  const artSong = songs.find((s) => s.id === artist.songIds[0] && s.albumArt);
-  return (
-    <Pressable style={styles.artistRow} onPress={onPress}
-      android_ripple={{ color: 'rgba(255,255,255,0.06)' }}>
-      {artSong?.albumArt ? (
-        <Image
-          source={toImageSource(artSong.albumArt)}
-          style={styles.artistAvatar}
-          resizeMode="cover"
-        />
-      ) : (
-        <LinearGradient colors={['#1e1e3a', '#12122a']} style={styles.artistAvatar}>
-          <MaterialCommunityIcons name="account-music" size={26} color={Colors.accent1} />
-        </LinearGradient>
-      )}
-      <View style={styles.artistMeta}>
-        <Text style={styles.artistName}>{artist.name}</Text>
-        <Text style={styles.artistSub}>
-          {artist.songIds.length} {artist.songIds.length === 1 ? 'track' : 'tracks'}
-        </Text>
-      </View>
-      <MaterialCommunityIcons name="chevron-right" size={22} color={Colors.textMuted} />
-    </Pressable>
-  );
-}
-
-// ─── Category Card ────────────────────────────────────────────────────────────
-function CategoryCard({
-  cat,
-  onPress,
-  cardWidth,
-}: {
-  cat: CategoryGroup;
-  onPress: () => void;
-  cardWidth: number;
-}) {
-  return (
-    <Pressable
-      style={[styles.catCard, { width: cardWidth }]}
-      onPress={onPress}
-      android_ripple={{ color: 'rgba(255,255,255,0.07)' }}>
-      <LinearGradient colors={cat.color as any} style={styles.catGradient}>
-        <MaterialCommunityIcons name={cat.icon} size={32} color="#fff" />
-        <Text style={styles.catLabel}>{cat.label}</Text>
-        <Text style={styles.catCount}>{cat.songs.length} tracks</Text>
-      </LinearGradient>
-    </Pressable>
-  );
-}
-
-// ─── Main MusicTab ────────────────────────────────────────────────────────────
 export function MusicTab(): React.ReactElement {
   const navigation = useNavigation<Nav>();
-  const { width: W } = useWindowDimensions();
+  const route = useRoute<any>();
 
-  const songs = useLibraryStore((s) => s.songs);
-  const addRecent = useLibraryStore((s) => s.addRecentlyPlayed);
-  const scanLibrary = useLibraryStore((s) => s.scanLibrary);
-  const favoriteIds = useLibraryStore((s) => s.favorites);
-  const toggleFavorite = useLibraryStore((s) => s.toggleFavorite);
-  const privateIds = useLibraryStore((s) => s.privateIds);
-  const togglePrivateId = useLibraryStore((s) => s.togglePrivateId);
-  const addQueue = usePlayerStore((s) => s.addToQueue);
+  const {
+    songs,
+    addRecentlyPlayed: addRecent,
+    privateIds,
+    recentlyPlayed,
+    favorites: favoriteIds,
+    toggleFavorite,
+    scanLibrary,
+    isScanning,
+  } = useLibrary();
+
   const playSong = usePlayerStore((s) => s.playSong);
-  const current = usePlayerStore((s) => s.currentSong);
-  const playing = usePlayerStore((s) => s.isPlaying);
+  const currentSongId = usePlayerStore((s) => s.currentSong?.id);
 
-  const [activeTab, setActiveTab] = useState<Tab>('songs');
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [q, setQ] = useState('');
   const [btOpen, setBtOpen] = useState(false);
+  const [menuSong, setMenuSong] = useState<Song | null>(null);
+  const [menuPosition, setMenuPosition] = useState(0);
 
-  const { devices, refresh } = useBluetoothPoll();
-  const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+  const openBluetoothParam = route.params?.openBluetooth;
+  React.useEffect(() => {
+    if (openBluetoothParam) {
+      setBtOpen(true);
+      navigation.setParams({ openBluetooth: undefined } as any);
+    }
+  }, [openBluetoothParam, navigation]);
 
-  // ── Songs ──
+  const { devices, refresh } = useBluetoothPoll(btOpen);
+  const bottomPadding = useBottomPadding();
+
+  const searchQuery = useSearchStore((s) => s.query);
+  const isSearchOpen = useSearchStore((s) => s.isSearchOpen);
+
+  // ── Visible songs (exclude private) ──
   const visibleSongs = useMemo(
     () => songs.filter((s) => !privateIds.includes(s.id)),
     [songs, privateIds],
   );
+
+  // Folders to hide from "All Songs" (shown only in Folders section)
+  const HIDDEN_FOLDERS = useMemo(() => ['call', 'recorder', 'recordings', 'whatsapp audio', 'ringtones', 'notifications', 'alarms', 'voice'], []);
+
+  // ── Music-only songs (filtered for All Songs) ──
+  const musicSongs = useMemo(() => {
+    return visibleSongs.filter((s) => {
+      const parts = s.path.replace(/\\/g, '/').split('/');
+      const folderName = (parts[parts.length - 2] || '').toLowerCase();
+      return !HIDDEN_FOLDERS.includes(folderName);
+    });
+  }, [visibleSongs, HIDDEN_FOLDERS]);
+
+  // ── All folders (for Folders section) ──
+  const audioFolders = useMemo(() => {
+    const map = new Map<string, { folderPath: string; folderName: string; count: number }>();
+    for (const s of visibleSongs) {
+      const parts = s.path.replace(/\\/g, '/').split('/');
+      const folderPath = parts.slice(0, -1).join('/');
+      const folderName = parts[parts.length - 2] || 'Storage';
+      if (!map.has(folderPath)) {
+        map.set(folderPath, { folderPath, folderName, count: 0 });
+      }
+      map.get(folderPath)!.count++;
+    }
+    return [...map.values()].sort((a, b) => a.folderName.localeCompare(b.folderName));
+  }, [visibleSongs]);
+
+  // ── Search filter (applies to musicSongs) ──
   const filteredSongs = useMemo(() => {
-    const base = sortSongs(visibleSongs, 'az');
-    if (!q.trim()) return base;
-    const t = q.toLowerCase();
-    return base.filter(
-      (s) =>
-        s.title.toLowerCase().includes(t) ||
-        s.artist.toLowerCase().includes(t) ||
-        s.album.toLowerCase().includes(t),
-    );
-  }, [visibleSongs, q]);
+    if (isSearchOpen && searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return musicSongs.filter(
+        (s) =>
+          s.title.toLowerCase().includes(q) ||
+          s.artist.toLowerCase().includes(q) ||
+          s.album.toLowerCase().includes(q),
+      );
+    }
+    return musicSongs;
+  }, [musicSongs, isSearchOpen, searchQuery]);
+
+  // ── Most Played (recently played order) ──
+  const mostPlayed = useMemo(() => {
+    const songMap = new Map(filteredSongs.map((s) => [s.id, s]));
+    return recentlyPlayed
+      .map((id) => songMap.get(id))
+      .filter((s): s is Song => s != null)
+      .slice(0, 20);
+  }, [filteredSongs, recentlyPlayed]);
 
   // ── Albums ──
-  const albums = useMemo(() => getAlbumsFromSongs(visibleSongs), [visibleSongs]);
-  const filteredAlbums = useMemo(() => {
-    if (!q.trim()) return albums;
-    const t = q.toLowerCase();
-    return albums.filter(
-      (a) => a.name.toLowerCase().includes(t) || a.artist.toLowerCase().includes(t),
-    );
-  }, [albums, q]);
+  const albums = useMemo(() => getAlbumsFromSongs(filteredSongs), [filteredSongs]);
 
-  // ── Artists ──
-  const artists = useMemo(() => getArtistsFromSongs(visibleSongs), [visibleSongs]);
-  const filteredArtists = useMemo(() => {
-    if (!q.trim()) return artists;
-    const t = q.toLowerCase();
-    return artists.filter((a) => a.name.toLowerCase().includes(t));
-  }, [artists, q]);
+  // ── Sorted songs (memoized to avoid re-sorting on every render) ──
+  const sortedSongs = useMemo(() => sortSongs(filteredSongs, 'az'), [filteredSongs]);
 
-  // ── Categories ──
-  const categories = useMemo(() => buildCategories(visibleSongs), [visibleSongs]);
-  const filteredCategories = useMemo(() => {
-    if (!q.trim()) return categories;
-    const t = q.toLowerCase();
-    return categories.filter((c) => c.label.toLowerCase().includes(t));
-  }, [categories, q]);
-
-  const handleLongPress = useCallback(
-    (song: Song) => {
-      Alert.alert('Move to Vault', `Move "${song.title}" to Private Vault?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Move', onPress: () => togglePrivateId(song.id) },
-      ]);
+  const handlePlaySong = useCallback(
+    (song: Song, list: Song[]) => {
+      const current = usePlayerStore.getState().currentSong;
+      if (current?.id === song.id) {
+        // Already playing this song - just navigate to NowPlaying
+        navigation.navigate('NowPlaying');
+        return;
+      }
+      playSong(song, list);
+      addRecent(song.id);
+      navigation.navigate('NowPlaying');
     },
-    [togglePrivateId],
+    [playSong, addRecent, navigation],
   );
 
-  const renderSong = useCallback(
-    ({ item }: { item: Song }) => (
-      <SongRow
-        song={item}
-        active={current?.id === item.id}
-        playing={playing}
-        onPress={() => {
-          playSong(item, filteredSongs);
-          addRecent(item.id);
-          navigation.navigate('NowPlaying');
-        }}
-        onLongPress={() => handleLongPress(item)}
-        onAddQueue={() => addQueue(item)}
-        rightAction={{
-          icon: favoriteSet.has(item.id) ? 'heart' : 'heart-outline',
-          backgroundColor: favoriteSet.has(item.id) ? Colors.danger : Colors.accent1,
-          onPress: () => toggleFavorite(item.id),
-        }}
-      />
-    ),
-    [
-      current?.id,
-      playing,
-      playSong,
-      filteredSongs,
-      addRecent,
-      navigation,
-      addQueue,
-      favoriteSet,
-      toggleFavorite,
-      handleLongPress,
-    ],
-  );
-
-  const renderAlbum = useCallback(
-    ({ item }: { item: Album }) => (
-      <AlbumCard
-        album={item}
-        onPress={() => navigation.navigate('AlbumDetail', { albumId: item.id })}
-      />
-    ),
-    [navigation],
-  );
-
-  const ALBUM_COL = 2;
-  const CAT_COL = 2;
-  const CAT_CARD_W = (W - 16 * 3) / CAT_COL;
-
-  // ── Search bar (shared across tabs) ──
-  const searchBar = searchOpen ? (
-    <View style={styles.searchBox}>
-      <MaterialCommunityIcons name="magnify" size={18} color={Colors.textMuted} />
-      <TextInput
-        value={q}
-        onChangeText={setQ}
-        placeholder={`Search ${activeTab}...`}
-        placeholderTextColor={Colors.textMuted}
-        style={styles.searchInput}
-        autoFocus
-      />
-      {q.length > 0 && (
-        <Pressable onPress={() => setQ('')}>
-          <MaterialCommunityIcons name="close-circle" size={18} color={Colors.textMuted} />
-        </Pressable>
-      )}
-    </View>
-  ) : null;
-
-
+  // ── Search results mode ──
+  if (isSearchOpen && searchQuery.trim()) {
+    const sorted = sortedSongs;
+    return (
+      <View style={s.root}>
+        <HomeHeader mode="audio" />
+        <FlatList
+          data={sorted}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingBottom: bottomPadding }}
+          renderItem={({ item }) => (
+            <Pressable
+              style={s.searchRow}
+              onPress={() => handlePlaySong(item, sorted)}
+            >
+              {item.albumArt ? (
+                <Image source={toImageSource(item.albumArt)} style={s.searchThumb} />
+              ) : (
+                <View style={[s.searchThumb, s.placeholderThumb]}>
+                  <MaterialCommunityIcons name="album" size={30} color={Colors.textMuted} />
+                </View>
+              )}
+              <View style={s.searchMeta}>
+                <Text numberOfLines={1} style={s.searchTitle}>{item.title}</Text>
+                <Text numberOfLines={1} style={s.searchArtist}>{item.artist}</Text>
+              </View>
+              <Text style={s.searchDur}>{formatTime(item.duration)}</Text>
+            </Pressable>
+          )}
+        />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.root}>
-      <MusicHeader
-        devices={devices}
-        onBtPress={() => setBtOpen(true)}
-        onSearchPress={() => setSearchOpen((v) => !v)}
-        onRefreshPress={() => scanLibrary()}
-      />
-
-      <TabBar active={activeTab} onChange={(t) => { setActiveTab(t); setQ(''); }} />
-
-      {searchBar}
-
-      {/* ── SONGS ── */}
-      {activeTab === 'songs' && (
-        <FlashList
-          data={filteredSongs}
-          estimatedItemSize={68}
-          keyExtractor={(item) => item.id}
-          renderItem={renderSong}
-          contentContainerStyle={styles.listContent}
-        />
-      )}
-
-      {/* ── ALBUMS ── */}
-      {activeTab === 'albums' && (
-        <FlashList
-          data={filteredAlbums}
-          numColumns={ALBUM_COL}
-          estimatedItemSize={180}
-          keyExtractor={(a) => a.id}
-          renderItem={renderAlbum}
-          contentContainerStyle={styles.gridContent}
-        />
-      )}
-
-      {/* ── ARTISTS ── */}
-      {activeTab === 'artists' && (
-        <FlashList
-          data={filteredArtists}
-          estimatedItemSize={72}
-          keyExtractor={(a) => a.id}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <ArtistRow
-              artist={item}
-              songs={visibleSongs}
-              onPress={() =>
-                navigation.navigate('ArtistDetail', { artistId: item.id })
-              }
-            />
-          )}
-        />
-      )}
-
-      {/* ── CATEGORIES ── */}
-      {activeTab === 'categories' && (
-        <FlashList
-          data={filteredCategories}
-          numColumns={CAT_COL}
-          estimatedItemSize={130}
-          keyExtractor={(c) => c.key}
-          contentContainerStyle={styles.gridContent}
-          renderItem={({ item }) => (
-            <View style={styles.catWrapper}>
-              <CategoryCard
-                cat={item}
-                cardWidth={CAT_CARD_W}
-                onPress={() => {
-                  if (item.songs.length > 0) {
-                    playSong(item.songs[0], item.songs);
+    <View style={s.root}>
+      <HomeHeader mode="audio" />
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: bottomPadding + 16 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isScanning}
+            onRefresh={scanLibrary}
+            tintColor={Colors.accent1}
+            colors={[Colors.accent1]}
+            progressBackgroundColor={Colors.surfaceElevated}
+          />
+        }
+      >
+        {/* ── Most Played Section (horizontal scroll, song rows) ── */}
+        {mostPlayed.length > 0 && (
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionTitle}>Most Played</Text>
+              <View style={s.headerBtns}>
+                <Pressable style={s.playAllBtn} hitSlop={12} onPress={() => {
+                  const shuffled = [...mostPlayed].sort(() => Math.random() - 0.5);
+                  if (shuffled.length > 0) {
+                    usePlayerStore.setState({ shuffleMode: true });
+                    playSong(shuffled[0], shuffled);
+                    addRecent(shuffled[0].id);
                     navigation.navigate('NowPlaying');
                   }
-                }}
-              />
+                }}>
+                  <MaterialCommunityIcons name="shuffle" size={16} color={Colors.textPrimary} />
+                </Pressable>
+              </View>
             </View>
-          )}
-        />
-      )}
+            <FlatList
+              data={(() => {
+                // Group into chunks of 4 for vertical columns, max 5 pages (20 songs)
+                const chunks = [];
+                for (let i = 0; i < Math.min(mostPlayed.length, 20); i += 4) {
+                  chunks.push(mostPlayed.slice(i, i + 4));
+                }
+                return chunks.slice(0, 5);
+              })()}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={Dimensions.get('window').width - 32}
+              decelerationRate="fast"
+              keyExtractor={(_, idx) => `chunk-${idx}`}
+              contentContainerStyle={s.hListSnap}
+              renderItem={({ item: chunk }) => (
+                <View style={s.mostPlayedColumn}>
+                  {chunk.map((item) => (
+                    <Pressable
+                      key={item.id}
+                      style={s.pickRow}
+                      onPress={() => handlePlaySong(item, mostPlayed)}
+                    >
+                      {item.albumArt ? (
+                        <Image source={toImageSource(item.albumArt)} style={s.pickThumb} />
+                      ) : (
+                        <View style={[s.pickThumb, s.placeholderThumb]}>
+                          <MaterialCommunityIcons name="album" size={32} color={Colors.textMuted} />
+                        </View>
+                      )}
+                      <View style={s.pickMeta}>
+                        <Text numberOfLines={1} style={[s.pickTitle, currentSongId === item.id && s.pickTitleActive]}>{item.title}</Text>
+                        <Text numberOfLines={1} style={s.pickArtist}>{item.artist}</Text>
+                      </View>
+                      <Pressable hitSlop={12} onPress={(e) => { setMenuPosition(e.nativeEvent.pageY); setMenuSong(item); }}>
+                        <MaterialCommunityIcons name="dots-vertical" size={20} color={Colors.textMuted} />
+                      </Pressable>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            />
+          </View>
+        )}
+
+        {/* ── All Songs Section (vertical list) ── */}
+        {filteredSongs.length > 0 && (
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionTitle}>All Songs</Text>
+              <View style={s.headerBtns}>
+                <Pressable style={s.playAllBtn} hitSlop={12} onPress={() => {
+                  const shuffled = [...filteredSongs].sort(() => Math.random() - 0.5);
+                  if (shuffled.length > 0) {
+                    usePlayerStore.setState({ shuffleMode: true });
+                    playSong(shuffled[0], shuffled);
+                    addRecent(shuffled[0].id);
+                    navigation.navigate('NowPlaying');
+                  }
+                }}>
+                  <MaterialCommunityIcons name="shuffle" size={16} color={Colors.textPrimary} />
+                </Pressable>
+              </View>
+            </View>
+            <FlatList
+              data={(() => {
+                const sorted = sortedSongs;
+                const chunks = [];
+                for (let i = 0; i < Math.min(sorted.length, 20); i += 4) {
+                  chunks.push(sorted.slice(i, i + 4));
+                }
+                return chunks.slice(0, 5);
+              })()}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={Dimensions.get('window').width - 32}
+              decelerationRate="fast"
+              keyExtractor={(_, idx) => `allsongs-${idx}`}
+              contentContainerStyle={s.hListSnap}
+              renderItem={({ item: chunk }) => (
+                <View style={s.mostPlayedColumn}>
+                  {chunk.map((item) => (
+                    <Pressable
+                      key={item.id}
+                      style={s.pickRow}
+                      onPress={() => handlePlaySong(item, sortedSongs)}
+                    >
+                      {item.albumArt ? (
+                        <Image source={toImageSource(item.albumArt)} style={s.pickThumb} />
+                      ) : (
+                        <View style={[s.pickThumb, s.placeholderThumb]}>
+                          <MaterialCommunityIcons name="album" size={32} color={Colors.textMuted} />
+                        </View>
+                      )}
+                      <View style={s.pickMeta}>
+                        <Text numberOfLines={1} style={[s.pickTitle, currentSongId === item.id && s.pickTitleActive]}>{item.title}</Text>
+                        <Text numberOfLines={1} style={s.pickArtist}>{item.artist}</Text>
+                      </View>
+                      <Pressable hitSlop={12} onPress={(e) => { setMenuPosition(e.nativeEvent.pageY); setMenuSong(item); }}>
+                        <MaterialCommunityIcons name="dots-vertical" size={20} color={Colors.textMuted} />
+                      </Pressable>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            />
+          </View>
+        )}
+
+        {/* ── Albums Section (3x3 grid + See All) ── */}
+        {albums.length > 0 && (
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionTitle}>Albums</Text>
+              {albums.length > 6 && (
+                <Pressable style={s.playAllBtn} onPress={() => navigation.navigate('AllAlbums')}>
+                  <Text style={s.playAllText}>See all</Text>
+                </Pressable>
+              )}
+            </View>
+            <View style={s.albumGrid}>
+              {albums.slice(0, 6).map((item) => (
+                <Pressable
+                  key={item.id}
+                  style={s.albumGridItem}
+                  onPress={() => navigation.navigate('AlbumDetail', { albumId: item.id })}
+                >
+                  <View style={s.albumArtWrap}>
+                    {item.artUri ? (
+                      <Image source={toImageSource(item.artUri)} style={s.albumArt} />
+                    ) : (
+                      <View style={[s.albumArt, s.placeholderArt]}>
+                        <MaterialCommunityIcons name="album" size={40} color={Colors.textMuted} />
+                      </View>
+                    )}
+                    <Pressable
+                      style={s.albumPlayBtn}
+                      onPress={() => {
+                        const albumSongs = filteredSongs.filter((song) => item.songIds.includes(song.id));
+                        if (albumSongs.length > 0) {
+                          playSong(albumSongs[0], albumSongs);
+                          addRecent(albumSongs[0].id);
+                          navigation.navigate('NowPlaying');
+                        }
+                      }}
+                      hitSlop={8}
+                    >
+                      <MaterialCommunityIcons name="play" size={18} color="#fff" />
+                    </Pressable>
+                  </View>
+                  <Text numberOfLines={1} style={s.albumName}>{item.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* ── Folders Section (horizontal scroll) ── */}
+        {audioFolders.length > 0 && (
+          <View style={s.section}>
+            <Text style={[s.sectionTitle, s.sectionTitleStandalone]}>Folders</Text>
+            <FlatList
+              data={audioFolders}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => item.folderPath}
+              contentContainerStyle={s.hList}
+              renderItem={({ item }) => {
+                const folderLower = item.folderName.toLowerCase();
+                let innerIcon = 'music-note';
+                let innerColor = Colors.accent1;
+                if (folderLower.includes('call') || folderLower.includes('record')) {
+                  innerIcon = 'phone';
+                  innerColor = '#10B981';
+                } else if (folderLower.includes('whatsapp')) {
+                  innerIcon = 'whatsapp';
+                  innerColor = '#25D366';
+                } else if (folderLower.includes('download')) {
+                  innerIcon = 'download';
+                  innerColor = '#3B82F6';
+                } else if (folderLower.includes('ringtone')) {
+                  innerIcon = 'bell-ring';
+                  innerColor = '#F59E0B';
+                } else if (folderLower.includes('notification') || folderLower.includes('alarm')) {
+                  innerIcon = 'bell';
+                  innerColor = '#F59E0B';
+                } else if (folderLower.includes('voice') || folderLower.includes('memo')) {
+                  innerIcon = 'microphone';
+                  innerColor = '#8B5CF6';
+                } else if (folderLower.includes('telegram')) {
+                  innerIcon = 'send';
+                  innerColor = '#0088CC';
+                }
+                return (
+                <Pressable
+                  style={s.folderCard}
+                  onPress={() => navigation.navigate('MusicFolderDetail', { folderPath: item.folderPath, folderName: item.folderName })}
+                >
+                  <View style={s.folderIcon}>
+                    <MaterialCommunityIcons name="folder" size={100} color={Colors.textMuted} />
+                    <View style={s.folderInnerIcon}>
+                      <MaterialCommunityIcons name={innerIcon} size={28} color={innerColor} />
+                    </View>
+                  </View>
+                  <Text numberOfLines={1} style={s.folderName}>{item.folderName}</Text>
+                  <Text style={s.folderCount}>{item.count} songs</Text>
+                </Pressable>
+                );
+              }}
+            />
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Small song options popup near 3-dot */}
+      <Modal
+        visible={menuSong !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuSong(null)}
+      >
+        <Pressable style={s.modalBackdrop} onPress={() => setMenuSong(null)}>
+          <View style={[s.miniModal, { top: menuPosition - 10 }]}>
+            <Pressable style={s.miniModalItem} onPress={() => { if (menuSong) toggleFavorite(menuSong.id); setMenuSong(null); }}>
+              <Text style={s.miniModalText}>
+                {menuSong && favoriteIds.includes(menuSong.id) ? 'Remove from favorites' : 'Add to favorites'}
+              </Text>
+            </Pressable>
+            <Pressable style={s.miniModalItem} onPress={() => {
+              if (menuSong) {
+                const albumKey = (menuSong.album?.trim().toLowerCase() || '') === '' ||
+                  menuSong.album?.trim().toLowerCase() === 'unknown' ||
+                  menuSong.album?.trim().toLowerCase() === 'unknown album'
+                  ? '__unknown__'
+                  : menuSong.album.trim().replace(/\s*[([]\d{4}[)\]]\s*$/, '').toLowerCase();
+                navigation.navigate('AlbumDetail', { albumId: albumKey });
+              }
+              setMenuSong(null);
+            }}>
+              <Text style={s.miniModalText}>Go to album</Text>
+            </Pressable>
+            <Pressable style={s.miniModalItem} onPress={() => {
+              if (menuSong) {
+                useLibraryStore.getState().togglePrivateId(menuSong.id);
+              }
+              setMenuSong(null);
+            }}>
+              <Text style={s.miniModalText}>Move to private</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
 
       <BluetoothSheet
         visible={btOpen}
@@ -431,124 +476,228 @@ export function MusicTab(): React.ReactElement {
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
 
-  // ── Tab bar ──
-  tabBarScroll: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.07)',
-    flexGrow: 0,
-  },
-  tabBarContent: {
+  // ── Sections ──
+  section: { marginTop: 20 },
+  sectionHeader: {
     flexDirection: 'row',
-    paddingHorizontal: 12,
-  },
-  tabItem: {
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    gap: 6,
-    position: 'relative',
+    marginBottom: 12,
   },
-  tabLabel: {
-    color: Colors.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
+  sectionTitle: {
+    color: Colors.textPrimary,
+    fontSize: 18,
+    fontFamily: 'Poppins-Bold',
   },
-  tabLabelActive: {
-    color: Colors.accent1,
+  sectionTitleStandalone: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
-  tabUnderline: {
-    position: 'absolute',
-    bottom: 0,
-    left: 12,
-    right: 12,
-    height: 2,
-    borderRadius: 2,
-    backgroundColor: Colors.accent1,
-  },
-
-  // ── Search ──
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 4,
-    padding: 10,
-    borderRadius: 14,
-    backgroundColor: Colors.surface,
+  playAllBtn: {
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.glassBorder,
+  },
+  playAllText: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontFamily: 'Poppins-Bold',
+  },
+  headerBtns: {
+    flexDirection: 'row',
     gap: 8,
   },
-  searchInput: {
-    flex: 1,
+  hList: { paddingHorizontal: 16, gap: 12 },
+  hListSnap: { paddingLeft: 16 },
+
+  // ── Quick Picks rows (vertical list) ──
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    gap: 10,
+  },
+  pickThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: Colors.surface,
+  },
+  pickMeta: { flex: 1, overflow: 'hidden' },
+  pickTitle: {
     color: Colors.textPrimary,
     fontSize: 14,
-    paddingVertical: 0,
+    fontFamily: 'Poppins-SemiBold',
   },
-  countRow: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 2,
+  pickTitleActive: {
+    color: Colors.accent1,
   },
-  countText: {
-    color: Colors.textMuted,
+  pickArtist: {
+    color: Colors.textSecondary,
     fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    marginTop: 2,
   },
-  listContent: { paddingBottom: 180 },
-  gridContent: { paddingHorizontal: 8, paddingBottom: 180, paddingTop: 4 },
 
-  // ── Artist ──
-  artistRow: {
+  // ── Album Grid (3x3) ──
+  albumGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  albumGridItem: {
+    width: (Dimensions.get('window').width - 24 - 24) / 3,
+    marginBottom: 8,
+  },
+  albumArtWrap: {
+    position: 'relative',
+  },
+  albumArt: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
+  },
+  albumPlayBtn: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  albumName: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontFamily: 'Poppins-SemiBold',
+    marginTop: 6,
+  },
+  albumSub: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  // ── Most Played (horizontal scroll, 4 songs per column) ──
+  mostPlayedColumn: {
+    width: Dimensions.get('window').width - 32,
+    paddingHorizontal: 12,
+  },
+  placeholderArt: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceElevated,
+  },
+  placeholderThumb: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceElevated,
+  },
+
+  // ── Folder Cards ──
+  folderCard: {
+    width: 140,
+    alignItems: 'center',
+  },
+  folderIcon: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  folderInnerIcon: {
+    position: 'absolute',
+  },
+  folderName: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontFamily: 'Poppins-SemiBold',
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  folderCount: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  // ── Small Options Modal ──
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  miniModal: {
+    position: 'absolute',
+    right: 16,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.glassBorder,
+    width: 200,
+    overflow: 'hidden',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  miniModalItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  miniModalText: {
+    color: Colors.textPrimary,
+    fontSize: 15,
+    fontFamily: 'Poppins-Medium',
+  },
+
+  // ── Search Results ──
+  searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.glassBorder,
     gap: 12,
   },
-  artistAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: Colors.surfaceElevated,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
+  searchThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: Colors.surface,
   },
-  artistMeta: { flex: 1 },
-  artistName: { color: Colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  artistSub: { color: Colors.textMuted, fontSize: 12, marginTop: 2 },
-
-  // ── Category ──
-  catWrapper: { flex: 1, padding: 6 },
-  catCard: {
-    borderRadius: 18,
-    overflow: 'hidden',
+  searchMeta: { flex: 1 },
+  searchTitle: {
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontFamily: 'Poppins-SemiBold',
   },
-  catGradient: {
-    padding: 20,
-    minHeight: 120,
-    justifyContent: 'flex-end',
-    gap: 4,
-  },
-  catLabel: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-    marginTop: 8,
-  },
-  catCount: {
-    color: 'rgba(255,255,255,0.7)',
+  searchArtist: {
+    color: Colors.textSecondary,
     fontSize: 12,
-    fontWeight: '600',
+    marginTop: 2,
+  },
+  searchDur: {
+    color: Colors.textMuted,
+    fontSize: 12,
   },
 });
+
+
+

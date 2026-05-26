@@ -1,97 +1,122 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { Dimensions, Platform, StyleSheet, Text, Vibration, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Dimensions, Platform, Text, Vibration, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue } from 'react-native-reanimated';
+import { runOnJS, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import SystemSetting from 'react-native-system-setting';
 import { usePlayerStore } from '../../store/playerStore';
+import { styles } from '../../styles/components/player/NowPlayingGesturesStyles';
 
-const { height: SCREEN_H } = Dimensions.get('window');
-const VEL = 800;
+const { height: screenH } = Dimensions.get('window');
 
 type Props = {
   children: React.ReactNode;
   onMinimize: () => void;
-  onNextVisual: () => void;
-  onPrevVisual: () => void;
+  songId?: string;
 };
 
 export function NowPlayingGestures({
   children,
   onMinimize,
-  onNextVisual,
-  onPrevVisual,
+  songId,
 }: Props): React.ReactElement {
   const next = usePlayerStore((s) => s.nextSong);
   const prev = usePlayerStore((s) => s.prevSong);
-  const startY = useSharedValue(0);
+
+  const translateY = useSharedValue(0);
+  const startVolume = useRef(0);
+  const lastSongId = useRef(songId);
+
   const [hud, setHud] = useState({ visible: false, text: '', bar: 0 });
-  const hideT = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const showHud = useCallback((text: string, bar: number) => {
-    if (hideT.current) {
-      clearTimeout(hideT.current);
-    }
+    if (hudTimer.current) clearTimeout(hudTimer.current);
     setHud({ visible: true, text, bar });
-    hideT.current = setTimeout(() => {
+    hudTimer.current = setTimeout(() => {
       setHud((h) => ({ ...h, visible: false }));
     }, 1500);
   }, []);
-  const handleEnd = useCallback(
-    (
-      sy: number,
-      vy: number,
-      vx: number,
-      tx: number,
-      ty: number,
-    ) => {
-      const bottomZone = sy > SCREEN_H * 0.62;
-      const topZone = sy < SCREEN_H * 0.32;
-      if (bottomZone && vy < -VEL) {
-        onNextVisual();
-        next();
-        return;
+
+  useEffect(() => {
+    if (songId !== lastSongId.current) {
+      lastSongId.current = songId;
+      translateY.value = withTiming(0, { duration: 250 });
+    }
+  }, [songId, translateY]);
+
+  const onPanStart = async () => {
+    try {
+      startVolume.current = await SystemSetting.getVolume('music');
+    } catch {
+      // ignore
+    }
+  };
+
+  const onPanUpdate = (translationX: number, translationY: number) => {
+    // If vertical movement is dominant, do translate slide animation
+    if (Math.abs(translationY) > Math.abs(translationX)) {
+      translateY.value = translationY;
+    } else {
+      // Horizontal swipe controls volume
+      const delta = -translationX / 300;
+      const nextVol = Math.max(0, Math.min(1, startVolume.current + delta));
+      SystemSetting.setVolume(nextVol, { type: 'music', showUI: false, playSound: false });
+      if (nextVol <= 0.01 || nextVol >= 0.99) {
+        Vibration.vibrate(Platform.OS === 'ios' ? 10 : 16);
       }
-      if (topZone && vy > VEL) {
-        onPrevVisual();
-        prev();
-        return;
-      }
-      if (Math.abs(vx) > VEL && Math.abs(tx) > 24) {
-        (async () => {
-          try {
-            const cur = await SystemSetting.getVolume('music');
-            const dv = -tx / 300;
-            const nv = Math.max(0, Math.min(1, cur + dv));
-            SystemSetting.setVolume(nv, { type: 'music', showUI: false, playSound: false });
-            if (nv <= 0.01 || nv >= 0.99) {
-              Vibration.vibrate(Platform.OS === 'ios' ? 10 : 16);
-            }
-            showHud(`${Math.round(nv * 100)}%`, nv * 120);
-          } catch {
-            /* volume control unavailable */
+      showHud(`${Math.round(nextVol * 100)}%`, nextVol * 100);
+    }
+  };
+
+  const onPanEnd = (velocityY: number, translationY: number) => {
+    if (translationY < -120 || velocityY < -800) {
+      // Swipe Up -> Next
+      translateY.value = withTiming(-screenH, { duration: 250 }, (finished) => {
+        if (finished) {
+          runOnJS(next)();
+          translateY.value = screenH;
+        }
+      });
+    } else if (translationY > 120 || velocityY > 800) {
+      // Swipe Down -> Prev or Minimize
+      if (velocityY > 1500) {
+        runOnJS(onMinimize)();
+        translateY.value = withTiming(0, { duration: 250 });
+      } else {
+        translateY.value = withTiming(screenH, { duration: 250 }, (finished) => {
+          if (finished) {
+            runOnJS(prev)();
+            translateY.value = -screenH;
           }
-        })();
-        return;
+        });
       }
-      if (vy > 1400 && ty > 90) {
-        onMinimize();
-      }
-    },
-    [next, onMinimize, onNextVisual, onPrevVisual, prev, showHud],
-  );
+    } else {
+      translateY.value = withTiming(0, { duration: 250 });
+    }
+  };
+
   const pan = Gesture.Pan()
-    .onBegin((e) => {
-      'worklet';
-      startY.value = e.absoluteY;
+    .onStart(() => {
+      runOnJS(onPanStart)();
+    })
+    .onUpdate((e) => {
+      runOnJS(onPanUpdate)(e.translationX, e.translationY);
     })
     .onEnd((e) => {
-      'worklet';
-      runOnJS(handleEnd)(startY.value, e.velocityY, e.velocityX, e.translationX, e.translationY);
+      runOnJS(onPanEnd)(e.velocityY, e.translationY);
     });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: 1 - Math.abs(translateY.value) / 1000,
+  }));
+
   return (
     <GestureDetector gesture={pan}>
-      <View style={styles.fill}>
+      <Animated.View style={[styles.fill, animatedStyle]}>
         {children}
-        {hud.visible ? (
+        {hud.visible && (
           <View pointerEvents="none" style={styles.hud}>
             <View style={styles.hudInner}>
               <Text style={styles.hudLabel}>{hud.text}</Text>
@@ -100,39 +125,8 @@ export function NowPlayingGestures({
               </View>
             </View>
           </View>
-        ) : null}
-      </View>
+        )}
+      </Animated.View>
     </GestureDetector>
   );
 }
-
-const styles = StyleSheet.create({
-  fill: { flex: 1 },
-  hud: {
-    ...StyleSheet.absoluteFill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hudInner: {
-    width: 120,
-    minHeight: 120,
-    borderRadius: 22,
-    backgroundColor: 'rgba(15,15,26,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-  },
-  hudLabel: { color: '#F8FAFC', fontSize: 20, fontWeight: '800' },
-  volTrack: {
-    width: 10,
-    height: 120,
-    borderRadius: 5,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    marginTop: 8,
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
-  },
-  volFill: { width: '100%', backgroundColor: '#06B6D4' },
-});

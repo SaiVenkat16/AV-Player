@@ -1,25 +1,33 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
-  StyleSheet,
+  Image,
   Text,
   View,
   Pressable,
-  Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { styles } from '../../styles/screens/shared/PrivateVaultStyles';
+
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { FlashList } from '@shopify/flash-list';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors } from '../../theme/colors';
 import { Typography } from '../../theme/typography';
 import { useLibraryStore } from '../../store/libraryStore';
 import { usePlayerStore } from '../../store/playerStore';
-import { SongRow } from '../../components/library/SongRow';
-import { VideoCard } from '../../components/library/VideoCard';
 import { PinPad } from '../../components/common/PinPad';
+import { useBottomPadding } from '../../hooks/useBottomPadding';
+import { useVideoPlayerStore } from '../../store/videoPlayerStore';
+import { showThemedAlert } from '../../utils/themedAlert';
+import { toImageSource } from '../../utils/mediaUri';
 
 export function PrivateVaultScreen(): React.ReactElement {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const mode: 'audio' | 'video' = route.params?.mode ?? 'audio';
   const privatePin = useLibraryStore((s) => s.privatePin);
+  const bottomPadding = useBottomPadding();
   const setPrivatePin = useLibraryStore((s) => s.setPrivatePin);
   const privateIds = useLibraryStore((s) => s.privateIds);
   const togglePrivateId = useLibraryStore((s) => s.togglePrivateId);
@@ -27,14 +35,48 @@ export function PrivateVaultScreen(): React.ReactElement {
   const videos = useLibraryStore((s) => s.videos);
 
   const playSong = usePlayerStore((s) => s.playSong);
+  const currentSongId = usePlayerStore((s) => s.currentSong?.id);
 
   // States
   const [pinInput, setPinInput] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [activeTab, setActiveTab] = useState<'music' | 'videos'>('music');
 
   // Verify PIN or setup PIN
   const isSetupMode = privatePin === null;
+
+  // Stop private song when leaving this screen
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', () => {
+      const cur = usePlayerStore.getState().currentSong;
+      if (cur && privateIds.includes(cur.id)) {
+        const TrackPlayer = require('react-native-track-player').default;
+        TrackPlayer.reset();
+        usePlayerStore.setState({ currentSong: null, isPlaying: false, queue: [], queueIndex: 0 });
+      }
+    });
+    return unsub;
+  }, [navigation, privateIds]);
+
+  // Lock private folder when app goes to background (power button, home button)
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const { AppState } = require('react-native');
+    const sub = AppState.addEventListener('change', (state: string) => {
+      if (state === 'background' || state === 'inactive') {
+        // Stop and reset private song completely (removes notification)
+        const cur = usePlayerStore.getState().currentSong;
+        if (cur && privateIds.includes(cur.id)) {
+          const TrackPlayer = require('react-native-track-player').default;
+          TrackPlayer.reset();
+          usePlayerStore.setState({ currentSong: null, isPlaying: false, queue: [], queueIndex: 0 });
+        }
+        // Lock and go back
+        setIsUnlocked(false);
+        navigation.goBack();
+      }
+    });
+    return () => sub.remove();
+  }, [isUnlocked, navigation, privateIds]);
 
   const handleKeyPress = (num: string) => {
     if (pinInput.length < 4) {
@@ -46,14 +88,14 @@ export function PrivateVaultScreen(): React.ReactElement {
         setTimeout(() => {
           if (isSetupMode) {
             setPrivatePin(nextPin);
-            Alert.alert('Success', 'Private Vault PIN has been successfully set.');
+            showThemedAlert({ title: 'Success', message: 'Private Folder PIN has been set.', buttons: [{ text: 'OK', style: 'default' }] });
             setPinInput('');
           } else {
             if (nextPin === privatePin) {
               setIsUnlocked(true);
               setPinInput('');
             } else {
-              Alert.alert('Error', 'Incorrect PIN. Please try again.');
+              showThemedAlert({ title: 'Error', message: 'Incorrect PIN. Please try again.', buttons: [{ text: 'OK', style: 'default' }] });
               setPinInput('');
             }
           }
@@ -76,21 +118,8 @@ export function PrivateVaultScreen(): React.ReactElement {
   }, [videos, privateIds]);
 
   // Actions
-  const handleRestore = (id: string, name: string) => {
-    Alert.alert(
-      'Restore Media',
-      `Do you want to restore "${name}" back to the main library?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restore',
-          onPress: () => {
-            togglePrivateId(id);
-          },
-        },
-      ]
-    );
-  };
+  // handleRestore is replaced by MediaActionSheet; leaving empty helper or removing is fine.
+  // We can just set the state for selectedMedia.
 
   if (!isUnlocked && !isSetupMode) {
     return (
@@ -112,8 +141,8 @@ export function PrivateVaultScreen(): React.ReactElement {
       <PinPad
         icon="shield-lock-outline"
         iconColor={Colors.accent2}
-        title="Set Vault PIN"
-        subtitle="Create a 4-digit PIN to secure your private media files"
+        title="Set PIN"
+        subtitle="Create a 4-digit PIN to secure your private files"
         pinLength={pinInput.length}
         onKeyPress={handleKeyPress}
         onDelete={handleDelete}
@@ -125,124 +154,108 @@ export function PrivateVaultScreen(): React.ReactElement {
   return (
     <View style={styles.root}>
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.back}>
-          <Text style={[Typography.subtitle, styles.backText]}>‹ Back</Text>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.headerBtn} hitSlop={12}>
+          <MaterialCommunityIcons name="chevron-left" size={28} color={Colors.textPrimary} />
         </Pressable>
-        <Text style={[Typography.title, styles.title]}>Private Vault</Text>
+        <View style={styles.headerCenter}>
+          <Text numberOfLines={1} style={styles.headerTitle}>Private Folder</Text>
+        </View>
         <Pressable 
           onPress={() => {
-            Alert.alert(
-              'Reset PIN',
-              'Are you sure you want to change your vault PIN? Current vault items will remain private.',
-              [
+            showThemedAlert({
+              title: 'Reset PIN',
+              message: 'Are you sure you want to change your PIN? Private files will remain hidden.',
+              buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                   text: 'Reset',
+                  style: 'destructive',
                   onPress: () => {
                     setPrivatePin(null);
                     setIsUnlocked(false);
                   },
                 },
-              ]
-            );
+              ],
+            });
           }}
-          style={styles.resetBtn}
+          style={styles.headerBtn}
+          hitSlop={16}
         >
           <MaterialCommunityIcons name="key-change" size={22} color={Colors.textSecondary} />
         </Pressable>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
-        <Pressable
-          onPress={() => setActiveTab('music')}
-          style={[styles.tab, activeTab === 'music' && styles.activeTab]}
-        >
-          <Text style={[Typography.subtitle, styles.tabText, activeTab === 'music' && styles.activeTabText]}>
-            Music ({privateSongs.length})
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => setActiveTab('videos')}
-          style={[styles.tab, activeTab === 'videos' && styles.activeTab]}
-        >
-          <Text style={[Typography.subtitle, styles.tabText, activeTab === 'videos' && styles.activeTabText]}>
-            Videos ({privateVideos.length})
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* List */}
-      {activeTab === 'music' ? (
-        <View style={styles.listWrap}>
-          {privateSongs.length === 0 ? (
+      {/* Content based on mode */}
+      <View style={styles.listWrap}>
+        {mode === 'audio' ? (
+          privateSongs.length === 0 ? (
             <View style={styles.emptyView}>
               <MaterialCommunityIcons name="music-box-outline" size={48} color={Colors.textMuted} />
-              <Text style={[Typography.body, styles.emptyText]}>No private music files</Text>
+              <Text style={[Typography.body, styles.emptyText]}>No private audio files</Text>
             </View>
           ) : (
             <FlashList
+              showsVerticalScrollIndicator={false}
               data={privateSongs}
               estimatedItemSize={68}
               keyExtractor={(item) => item.id}
+              contentContainerStyle={{ paddingBottom: bottomPadding }}
               renderItem={({ item }) => (
-                <SongRow
-                  song={item}
-                  active={false}
-                  playing={false}
+                <Pressable
+                  style={styles.songRow}
                   onPress={() => playSong(item, privateSongs)}
-                  onLongPress={() => handleRestore(item.id, item.title)}
-                  onAddQueue={() => {}}
-                />
+                >
+                  {item.albumArt ? (
+                    <Image source={toImageSource(item.albumArt)} style={styles.songThumb} />
+                  ) : (
+                    <View style={[styles.songThumb, styles.songThumbPlaceholder]}>
+                      <MaterialCommunityIcons name="album" size={24} color={Colors.textMuted} />
+                    </View>
+                  )}
+                  <View style={styles.songMeta}>
+                    <Text numberOfLines={1} style={[styles.songTitle, currentSongId === item.id && styles.songTitleActive]}>{item.title}</Text>
+                    <Text numberOfLines={1} style={styles.songArtist}>{item.artist}</Text>
+                  </View>
+                  <Pressable hitSlop={12} onPress={() => togglePrivateId(item.id)}>
+                    <MaterialCommunityIcons name="lock-open-outline" size={20} color={Colors.textMuted} />
+                  </Pressable>
+                </Pressable>
               )}
             />
-          )}
-        </View>
-      ) : (
-        <View style={styles.listWrap}>
-          {privateVideos.length === 0 ? (
+          )
+        ) : (
+          privateVideos.length === 0 ? (
             <View style={styles.emptyView}>
               <MaterialCommunityIcons name="video-off-outline" size={48} color={Colors.textMuted} />
               <Text style={[Typography.body, styles.emptyText]}>No private video files</Text>
             </View>
           ) : (
             <FlashList
+              showsVerticalScrollIndicator={false}
               data={privateVideos}
-              numColumns={2}
-              estimatedItemSize={200}
+              estimatedItemSize={68}
               keyExtractor={(item) => item.id}
+              contentContainerStyle={{ paddingBottom: bottomPadding }}
               renderItem={({ item }) => (
-                <View style={styles.videoCardWrapper}>
-                  <VideoCard
-                    item={item}
-                    onOpen={() => navigation.navigate('VideoPlayer', { videoId: item.id })}
-                    onLongMenu={() => handleRestore(item.id, item.title)}
-                  />
-                </View>
+                <Pressable
+                  style={styles.songRow}
+                  onPress={() => useVideoPlayerStore.getState().openVideo(item.id)}
+                >
+                  <View style={styles.songMeta}>
+                    <Text numberOfLines={1} style={styles.songTitle}>{item.title}</Text>
+                  </View>
+                  <Pressable hitSlop={12} onPress={() => togglePrivateId(item.id)}>
+                    <MaterialCommunityIcons name="lock-open-outline" size={20} color={Colors.textMuted} />
+                  </Pressable>
+                </Pressable>
               )}
             />
-          )}
-        </View>
-      )}
+          )
+        )}
+      </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
-  backText: { color: Colors.accent2, fontSize: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.glassBorder },
-  back: { paddingVertical: 4 },
-  title: { color: Colors.textPrimary },
-  resetBtn: { padding: 4 },
-  tabContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: Colors.glassBorder },
-  tab: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  activeTab: { borderBottomWidth: 2, borderBottomColor: Colors.accent1 },
-  tabText: { color: Colors.textMuted },
-  activeTabText: { color: Colors.accent1 },
-  listWrap: { flex: 1, paddingBottom: 80 },
-  emptyView: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
-  emptyText: { color: Colors.textMuted },
-  videoCardWrapper: { flex: 0.5, marginHorizontal: 8, marginTop: 16 },
-});
+

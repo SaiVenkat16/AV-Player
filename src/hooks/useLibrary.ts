@@ -1,5 +1,5 @@
 import { useLibraryStore } from '../store/libraryStore';
 
-export function useLibrary(): ReturnType<typeof useLibraryStore> {
+export function useLibrary() {
   return useLibraryStore();
 }

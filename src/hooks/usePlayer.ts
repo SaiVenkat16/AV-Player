@@ -11,7 +11,6 @@ import type { Track } from 'react-native-track-player';
 import type { Song } from '../types';
 import { useLibraryStore } from '../store/libraryStore';
 import { usePlayerStore } from '../store/playerStore';
-import { useSettingsStore } from '../store/settingsStore';
 import { toFileUri } from '../utils/mediaUri';
 import { Logger } from '../utils/logger';
 
@@ -56,9 +55,6 @@ export function usePlayerBootstrap(): void {
   const track = useActiveTrack();
   const playback = usePlaybackState();
   const { position, duration } = useProgress(250);
-  const lastPos = useRef(0);
-  const pendingListenSeconds = useRef(0); // Bug #6: accumulate, flush every 5s
-  const listenFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasRehydrated = useRef(false); // Bug #13: only rehydrate once
   const sleepTimerAt = usePlayerStore((s) => s.sleepTimerAt);
   const sleepTimerTrackId = usePlayerStore((s) => s.sleepTimerTrackId);
@@ -161,48 +157,6 @@ export function usePlayerBootstrap(): void {
       cancelled = true;
     };
   }, [track?.id, songs]);
-
-  useEffect(() => {
-    const song = usePlayerStore.getState().currentSong;
-    if (!song || playState !== State.Playing) {
-      return;
-    }
-    const delta = Math.max(0, position - lastPos.current);
-    lastPos.current = position;
-    if (delta > 0 && delta < 5) {
-      // Accumulate instead of writing to store every 250ms
-      pendingListenSeconds.current += delta;
-
-      // Flush every 5 seconds to avoid GC pressure
-      if (!listenFlushTimer.current) {
-        listenFlushTimer.current = setTimeout(() => {
-          listenFlushTimer.current = null;
-          const s = usePlayerStore.getState().currentSong;
-          const secs = pendingListenSeconds.current;
-          pendingListenSeconds.current = 0;
-          if (s && secs > 0) {
-            useSettingsStore.getState().recordListenSeconds(s.id, s.artist, secs);
-          }
-        }, 5000);
-      }
-    }
-  }, [position, playState]);
-
-  // Flush on unmount to avoid losing data
-  useEffect(() => {
-    return () => {
-      if (listenFlushTimer.current) {
-        clearTimeout(listenFlushTimer.current);
-        listenFlushTimer.current = null;
-        const song = usePlayerStore.getState().currentSong;
-        const secs = pendingListenSeconds.current;
-        pendingListenSeconds.current = 0;
-        if (song && secs > 0) {
-          useSettingsStore.getState().recordListenSeconds(song.id, song.artist, secs);
-        }
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (sleepTimerTrackId && track?.id != null) {

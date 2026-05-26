@@ -1,9 +1,10 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors } from '../../theme/colors';
 import { Typography } from '../../theme/typography';
 import type { BtDeviceInfo } from '../../services/BluetoothService';
+import { styles } from '../../styles/components/bluetooth/BluetoothIndicatorStyles';
 
 type Props = {
   devices: BtDeviceInfo[];
@@ -29,8 +30,3 @@ export function BluetoothIndicator({ devices, onPress }: Props): React.ReactElem
   );
 }
 
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', maxWidth: 160 },
-  glow: { textShadowColor: Colors.accent2, textShadowRadius: 8 },
-  name: { color: Colors.textSecondary, marginLeft: 4 },
-});

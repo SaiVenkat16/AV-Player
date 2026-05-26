@@ -6,6 +6,7 @@ import { runOnJS } from 'react-native-reanimated';
 import { Colors } from '../../theme/colors';
 import { Typography } from '../../theme/typography';
 import { formatTime } from '../../utils/formatTime';
+import { styles } from '../../styles/components/player/ProgressBarStyles';
 
 type Props = {
   position: number;
@@ -13,7 +14,7 @@ type Props = {
   onSeek: (sec: number) => void;
 };
 
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 export function ProgressBar({ position, duration, onSeek }: Props): React.ReactElement {
   const [w, setW] = useState(1);
@@ -61,7 +62,7 @@ export function ProgressBar({ position, duration, onSeek }: Props): React.ReactE
       : prog * 100;
     return {
       left: `${left}%`,
-      transform: [{ scale: withSpring(isDragging.value ? 1.2 : 1) }],
+      transform: [{ scale: withTiming(isDragging.value ? 1.2 : 1, { duration: 150 }) }],
     };
   });
 
@@ -94,53 +95,3 @@ export function ProgressBar({ position, duration, onSeek }: Props): React.ReactE
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { width: '100%', marginVertical: 20 },
-  touchArea: {
-    height: 40,
-    justifyContent: 'center',
-    width: '100%',
-  },
-  track: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
-  },
-  played: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  thumb: {
-    position: 'absolute',
-    width: 24,
-    height: 24,
-    marginLeft: -12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  thumbInner: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: Colors.textPrimary,
-    borderWidth: 3,
-    borderColor: Colors.accent1,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-  },
-  times: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: -4,
-  },
-  tm: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-});

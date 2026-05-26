@@ -1,7 +1,6 @@
 import React from 'react';
 import { Platform } from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
-import Orientation from 'react-native-orientation-locker';
 import Video, { ViewType } from 'react-native-video';
 import { useLibraryStore } from '../src/store/libraryStore';
 
@@ -10,17 +9,24 @@ Object.defineProperty(Platform, 'OS', {
   value: 'android',
 });
 
+jest.mock('../src/services/NativeVideoPlayer', () => ({
+  isNativeVideoPlayerAvailable: jest.fn(() => true),
+  openNativeVideoPlayer: jest.fn(() => Promise.resolve()),
+}));
+
 const {
-  VideoPlayerScreen,
+  VideoPlayerOverlay: VideoPlayerScreen,
 } = require('../src/screens/video/VideoPlayerScreen') as typeof import('../src/screens/video/VideoPlayerScreen');
 
-let beforeRemoveHandler: (() => void) | undefined;
+const { openNativeVideoPlayer } = require('../src/services/NativeVideoPlayer') as {
+  openNativeVideoPlayer: jest.Mock;
+};
+
 let renderedTree: ReactTestRenderer.ReactTestRenderer | null = null;
 
 const mockNavigation = {
   goBack: jest.fn(),
-  addListener: jest.fn((_event: string, cb: () => void) => {
-    beforeRemoveHandler = cb;
+  addListener: jest.fn(() => {
     return jest.fn();
   }),
 };
@@ -46,8 +52,8 @@ jest.mock('react-native-video', () => {
       }>,
     ) => {
       ReactLib.useImperativeHandle(ref, () => ({
-      seek,
-      enterPictureInPicture,
+        seek,
+        enterPictureInPicture,
       }));
       return ReactLib.createElement(View, { ...props, testID: 'mock-video' });
     },
@@ -64,24 +70,10 @@ jest.mock('react-native-video', () => {
   };
 });
 
-jest.mock('../src/components/video/VideoGestureHandler', () => ({
-  VideoGestureHandler: ({ children }: { children: React.ReactNode }) => children,
-}));
-
-jest.mock('../src/components/video/VideoControls', () => ({
-  VideoControls: () => null,
-}));
-
-jest.mock('../src/components/video/GestureHUD', () => ({
-  GestureHUD: () => null,
-}));
-
 describe('VideoPlayerScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    beforeRemoveHandler = undefined;
-    mockNavigation.addListener.mockImplementation((_event: string, cb: () => void) => {
-      beforeRemoveHandler = cb;
+    mockNavigation.addListener.mockImplementation(() => {
       return jest.fn();
     });
     act(() => {
@@ -119,67 +111,30 @@ describe('VideoPlayerScreen', () => {
     }
   });
 
-  test('starts on Android texture view first', () => {
-    act(() => {
+  test('opens native Android player instead of react-native-video', async () => {
+    await act(async () => {
+      renderedTree = ReactTestRenderer.create(<VideoPlayerScreen />);
+      await Promise.resolve();
+    });
+
+    expect(openNativeVideoPlayer).toHaveBeenCalledWith(
+      'file:///storage/emulated/0/DCIM/player.mp4',
+    );
+    expect(() => renderedTree!.root.findByType(Video)).toThrow();
+  });
+
+  test('uses embedded player with texture view when native module unavailable', async () => {
+    const { isNativeVideoPlayerAvailable } = require('../src/services/NativeVideoPlayer') as {
+      isNativeVideoPlayerAvailable: jest.Mock;
+    };
+    isNativeVideoPlayerAvailable.mockReturnValue(false);
+
+    await act(async () => {
       renderedTree = ReactTestRenderer.create(<VideoPlayerScreen />);
     });
 
     const video = renderedTree!.root.findByType(Video);
     expect(video.props.viewType).toBe(ViewType.TEXTURE);
-  });
-
-  test('falls back to surface view when progress advances without a ready frame', () => {
-    const nowSpy = jest.spyOn(Date, 'now');
-    nowSpy.mockReturnValue(1_000);
-
-    act(() => {
-      renderedTree = ReactTestRenderer.create(<VideoPlayerScreen />);
-    });
-
-    const firstVideo = renderedTree!.root.findByType(Video);
-
-    act(() => {
-      firstVideo.props.onLoadStart();
-    });
-
-    nowSpy.mockReturnValue(3_500);
-
-    act(() => {
-      firstVideo.props.onProgress({ currentTime: 0.75 });
-    });
-
-    const retriedVideo = renderedTree!.root.findByType(Video);
-    expect(retriedVideo.props.viewType).toBe(ViewType.SURFACE);
-
-    nowSpy.mockRestore();
-  });
-
-  test('restores portrait on navigation removal and unmount', () => {
-    const orientation = Orientation as jest.Mocked<typeof Orientation>;
-
-    act(() => {
-      renderedTree = ReactTestRenderer.create(<VideoPlayerScreen />);
-    });
-
-    const beforeRemovePortraitCalls = orientation.lockToPortrait.mock.calls.length;
-
-    act(() => {
-      beforeRemoveHandler?.();
-    });
-
-    expect(orientation.lockToPortrait.mock.calls.length).toBeGreaterThan(
-      beforeRemovePortraitCalls,
-    );
-
-    const beforeUnmountPortraitCalls = orientation.lockToPortrait.mock.calls.length;
-
-    act(() => {
-      renderedTree?.unmount();
-    });
-    renderedTree = null;
-
-    expect(orientation.lockToPortrait.mock.calls.length).toBeGreaterThan(
-      beforeUnmountPortraitCalls,
-    );
+    expect(video.props.hideShutterView).toBe(true);
   });
 });

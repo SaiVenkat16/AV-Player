@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import RNFS from 'react-native-fs';
@@ -7,11 +6,17 @@ import { createVideoThumbnail, scanDeviceMedia } from '../services/StorageScanne
 import { toLocalPath } from '../utils/mediaUri';
 import { RECENTLY_PLAYED_MAX, STORAGE_KEYS } from '../utils/constants';
 import { Logger } from '../utils/logger';
+import { mmkvZustandStorage } from '../utils/mmkvStorage';
 
 function buildAlbums(songs: Song[]): Album[] {
   const map = new Map<string, Album>();
   for (const s of songs) {
-    const key = `${s.album}::${s.artist}`;
+    const raw = s.album?.trim().toLowerCase() || '';
+    // Treat empty, "unknown", "unknown album" all as unknown
+    const isUnknown = !raw || raw === 'unknown' || raw === 'unknown album';
+    // Strip year like "(2017)" or "[2017]" from album name
+    const cleanedAlbum = isUnknown ? 'Unknown' : s.album.trim().replace(/\s*[([]\d{4}[)\]]\s*$/, '');
+    const key = isUnknown ? '__unknown__' : cleanedAlbum.toLowerCase();
     const cur = map.get(key);
     if (cur) {
       cur.songIds.push(s.id);
@@ -21,8 +26,8 @@ function buildAlbums(songs: Song[]): Album[] {
     } else {
       map.set(key, {
         id: key,
-        name: s.album,
-        artist: s.artist,
+        name: cleanedAlbum,
+        artist: isUnknown ? '' : s.artist,
         artUri: s.albumArt,
         songIds: [s.id],
       });
@@ -69,6 +74,7 @@ type PersistedLibraryState = {
   videoCacheVersion: number;
   privateIds: string[];
   privatePin: string | null;
+  videoBookmarks: Record<string, { time: number; label: string }[]>;
 };
 
 function hasUsableThumbnailUri(uri: string | null | undefined): boolean {
@@ -115,6 +121,7 @@ export function migrateLibraryPersistedState(
     videoCacheVersion: LIBRARY_VIDEO_CACHE_VERSION,
     privateIds,
     privatePin,
+    videoBookmarks: persistedState?.videoBookmarks ?? {},
   };
 }
 
@@ -142,10 +149,14 @@ interface LibraryState {
   removeFromPlaylist: (playlistId: string, songId: string) => void;
   addRecentlyPlayed: (songId: string) => void;
   removeSongFromLibrary: (songId: string) => void;
+  removeVideoFromLibrary: (videoId: string) => void;
   privateIds: string[];
   privatePin: string | null;
   setPrivatePin: (pin: string | null) => void;
   togglePrivateId: (id: string) => void;
+  videoBookmarks: Record<string, { time: number; label: string }[]>;
+  addVideoBookmark: (videoId: string, time: number, label: string) => void;
+  removeVideoBookmark: (videoId: string, time: number) => void;
 }
 
 export const useLibraryStore = create<LibraryState>()(
@@ -158,10 +169,32 @@ export const useLibraryStore = create<LibraryState>()(
       recentlyPlayed: [],
       privateIds: [],
       privatePin: null,
+      videoBookmarks: {},
       isScanning: false,
       scanProgress: 0,
       isLoaded: false,
       videoCacheVersion: LIBRARY_VIDEO_CACHE_VERSION,
+      addVideoBookmark: (videoId, time, label) => {
+        const current = get().videoBookmarks[videoId] ?? [];
+        if (current.some(b => Math.floor(b.time) === Math.floor(time))) return;
+        const next = [...current, { time, label }].sort((a, b) => a.time - b.time);
+        set({
+          videoBookmarks: {
+            ...get().videoBookmarks,
+            [videoId]: next,
+          },
+        });
+      },
+      removeVideoBookmark: (videoId, time) => {
+        const current = get().videoBookmarks[videoId] ?? [];
+        const next = current.filter(b => b.time !== time);
+        set({
+          videoBookmarks: {
+            ...get().videoBookmarks,
+            [videoId]: next,
+          },
+        });
+      },
       setPrivatePin: (pin) => set({ privatePin: pin }),
       togglePrivateId: (id) => {
         const current = get().privateIds;
@@ -323,12 +356,19 @@ export const useLibraryStore = create<LibraryState>()(
             ...p,
             songIds: p.songIds.filter((sid) => sid !== songId),
           })),
+          privateIds: get().privateIds.filter((id) => id !== songId),
+        });
+      },
+      removeVideoFromLibrary: (videoId) => {
+        set({
+          videos: get().videos.filter((v) => v.id !== videoId),
+          privateIds: get().privateIds.filter((id) => id !== videoId),
         });
       },
     }),
     {
       name: STORAGE_KEYS.libraryMeta,
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => mmkvZustandStorage),
       version: 1,
       migrate: (persistedState, version) =>
         migrateLibraryPersistedState(
@@ -345,6 +385,7 @@ export const useLibraryStore = create<LibraryState>()(
         videoCacheVersion: s.videoCacheVersion,
         privateIds: s.privateIds,
         privatePin: s.privatePin,
+        videoBookmarks: s.videoBookmarks,
       }),
     },
   ),

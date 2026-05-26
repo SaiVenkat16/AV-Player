@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import TrackPlayer, { State } from 'react-native-track-player';
@@ -8,12 +7,12 @@ import {
   crossfadeToNext,
   loadQueue,
   setRepeatMode,
-  setShuffleMode,
   setupAudio,
 } from '../services/AudioService';
 import { ensurePlaybackNotificationPermission } from '../services/PermissionService';
 import { useSettingsStore } from './settingsStore';
 import { STORAGE_KEYS } from '../utils/constants';
+import { mmkvZustandStorage } from '../utils/mmkvStorage';
 
 export type RepeatModeSetting = 'off' | 'all' | 'one';
 
@@ -34,6 +33,7 @@ interface PlayerState {
   sleepTimerTrackId: string | null;
   playSong: (song: Song, queue?: Song[]) => void;
   togglePlay: () => void;
+  pause: () => void;
   nextSong: () => void;
   prevSong: () => void;
   seekTo: (position: number) => void;
@@ -122,6 +122,7 @@ export const usePlayerStore = create<PlayerState>()(
         await ensurePlaybackNotificationPermission();
         await loadQueue(list, idx, get().shuffleMode);
         await setRepeatMode(get().repeatMode);
+        await TrackPlayer.setVolume(1);
         await TrackPlayer.play();
         set({
           currentSong: song,
@@ -143,13 +144,36 @@ export const usePlayerStore = create<PlayerState>()(
           await TrackPlayer.play();
         }
       },
+      pause: async () => {
+        await setupAudio();
+        const st = await TrackPlayer.getPlaybackState();
+        if (st.state === State.Playing) {
+          await TrackPlayer.pause();
+          set({ isPlaying: false });
+        }
+      },
       nextSong: async () => {
         await setupAudio();
-        const cf = useSettingsStore.getState().crossfadeMs;
-        if (cf > 0) {
-          await crossfadeToNext(cf);
+        if (get().shuffleMode) {
+          // Pick random song from queue (not current)
+          const q = get().queue;
+          const cur = get().currentSong;
+          const others = q.filter((s) => s.id !== cur?.id);
+          if (others.length > 0) {
+            const random = others[Math.floor(Math.random() * others.length)];
+            const idx = q.findIndex((s) => s.id === random.id);
+            if (idx >= 0) {
+              await TrackPlayer.skip(idx);
+              await TrackPlayer.play();
+            }
+          }
         } else {
-          await TrackPlayer.skipToNext();
+          const cf = useSettingsStore.getState().crossfadeMs;
+          if (cf > 0) {
+            await crossfadeToNext(cf);
+          } else {
+            await TrackPlayer.skipToNext();
+          }
         }
       },
       prevSong: async () => {
@@ -166,14 +190,9 @@ export const usePlayerStore = create<PlayerState>()(
         await TrackPlayer.setVolume(v);
         set({ volume: v });
       },
-      toggleShuffle: async () => {
+      toggleShuffle: () => {
         const next = !get().shuffleMode;
         set({ shuffleMode: next });
-        const cur = get().currentSong;
-        const q = get().queue;
-        if (cur && q.length > 0) {
-          await setShuffleMode(next, q);
-        }
       },
       cycleRepeat: async () => {
         const order: RepeatModeSetting[] = ['off', 'all', 'one'];
@@ -270,14 +289,13 @@ export const usePlayerStore = create<PlayerState>()(
   },
     {
       name: STORAGE_KEYS.playerState,
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => mmkvZustandStorage),
       partialize: (s) => ({
         currentSong: s.currentSong,
         queue: s.queue,
         queueIndex: s.queueIndex,
         shuffleMode: s.shuffleMode,
         repeatMode: s.repeatMode,
-        volume: s.volume,
       }),
     },
   ),
