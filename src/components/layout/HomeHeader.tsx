@@ -23,6 +23,12 @@ export const HomeHeader = React.memo(function HomeHeader({ mode }: Props): React
 
   const isAudioTab = mode === 'audio';
 
+  // Favorites and PrivateVault are registered on both stacks now, so we can
+  // navigate within the active stack — no cross-tab jump.
+  const goFavorites = () => navigation.navigate('Favorites', { mode });
+  const goVault = () =>
+    navigation.navigate('PrivateVault', { mode });
+
   return (
     <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
       {/* Row 1: App name + icons */}
@@ -31,14 +37,14 @@ export const HomeHeader = React.memo(function HomeHeader({ mode }: Props): React
         <View style={styles.headerIcons}>
           <Pressable
             style={styles.menuBtn}
-            onPress={() => navigation.navigate('Music', { screen: 'Favorites' })}
+            onPress={goFavorites}
             hitSlop={12}
           >
             <MaterialCommunityIcons name="heart-outline" size={26} color={Colors.textPrimary} />
           </Pressable>
           <Pressable
             style={styles.menuBtn}
-            onPress={() => navigation.navigate('Music', { screen: 'PrivateVault', params: { mode: mode } })}
+            onPress={goVault}
             hitSlop={12}
           >
             <MaterialCommunityIcons name="folder-lock" size={26} color={Colors.textPrimary} />

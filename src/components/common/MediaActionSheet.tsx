@@ -7,6 +7,7 @@ import { Colors } from '../../theme/colors';
 import { Typography } from '../../theme/typography';
 import { useLibraryStore } from '../../store/libraryStore';
 import { usePlayerStore } from '../../store/playerStore';
+import { useVideoPlayerStore } from '../../store/videoPlayerStore';
 import { toImageSource } from '../../utils/mediaUri';
 import { formatBytes } from '../../utils/formatTime';
 import { showThemedAlert } from '../../utils/themedAlert';
@@ -55,10 +56,10 @@ export function MediaActionSheet({
       playSong(song, [song]);
       navigation.navigate('Music', { screen: 'NowPlaying' });
     } else if (isVideo) {
-      navigation.navigate('Videos', {
-        screen: 'VideoPlayer',
-        params: { videoId: item.id },
-      });
+      // Video player is rendered as a global overlay (see VideoPlayerOverlay
+      // in AppBootstrap). It is not a registered route, so we open it via
+      // the dedicated store rather than navigation.
+      useVideoPlayerStore.getState().openVideo(item.id);
     }
   };
 

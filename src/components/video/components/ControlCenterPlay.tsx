@@ -17,17 +17,17 @@ export function ControlCenterPlay({
   return (
     <View style={styles.centerRow} pointerEvents="box-none">
       <Pressable onPress={() => onSeek(-10)} style={styles.seekBtn} hitSlop={16}>
-        <MaterialCommunityIcons name="rewind-10" size={36} color="#fff" />
+        <MaterialCommunityIcons name="rewind-10" size={28} color="#fff" />
       </Pressable>
       <Pressable onPress={onTogglePlay} style={styles.playPauseBtn} hitSlop={8}>
         <MaterialCommunityIcons
           name={paused ? 'play-circle' : 'pause-circle'}
-          size={72}
+          size={56}
           color="#fff"
         />
       </Pressable>
       <Pressable onPress={() => onSeek(10)} style={styles.seekBtn} hitSlop={16}>
-        <MaterialCommunityIcons name="fast-forward-10" size={36} color="#fff" />
+        <MaterialCommunityIcons name="fast-forward-10" size={28} color="#fff" />
       </Pressable>
     </View>
   );

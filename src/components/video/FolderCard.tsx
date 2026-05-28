@@ -1,15 +1,9 @@
 import React from 'react';
-import {
-  Image,
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import LinearGradient from 'react-native-linear-gradient';
 import { Colors } from '../../theme/colors';
 import type { Video } from '../../types';
-import { toImageSource } from '../../utils/mediaUri';
+import { getVideoFolderIcon } from '../../utils/folderIcon';
 import { styles } from '../../styles/components/video/FolderCardStyles';
 
 export interface VideoFolder {
@@ -22,44 +16,23 @@ export interface VideoFolder {
 interface FolderCardProps {
   folder: VideoFolder;
   onPress: () => void;
-  cardWidth: number;
 }
 
 export function FolderCard({
   folder,
   onPress,
-  cardWidth,
 }: FolderCardProps): React.ReactElement {
+  const { innerIcon, innerColor } = getVideoFolderIcon(folder.folderName);
   return (
     <Pressable
-      style={[styles.folderCard, { width: cardWidth }]}
+      style={styles.folderCard}
       onPress={onPress}
-      android_ripple={{ color: 'rgba(255,255,255,0.08)' }}>
-      <View style={styles.folderThumbWrap}>
-        {folder.coverUri ? (
-          <Image
-            source={toImageSource(folder.coverUri)}
-            style={styles.folderThumb}
-            resizeMode="cover"
-          />
-        ) : (
-          <LinearGradient
-            colors={['#1e1e3a', '#12122a']}
-            style={styles.folderThumb}>
-            <MaterialCommunityIcons
-              name="play-circle-outline"
-              size={40}
-              color={Colors.accent1}
-            />
-          </LinearGradient>
-        )}
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.85)']}
-          style={styles.folderGradient}
-        />
-        {/* Video count badge */}
-        <View style={styles.countBadge}>
-          <Text style={styles.countBadgeText}>{folder.videos.length}</Text>
+      android_ripple={{ color: 'rgba(255,255,255,0.08)' }}
+    >
+      <View style={styles.folderIcon}>
+        <MaterialCommunityIcons name="folder" size={100} color={Colors.textMuted} />
+        <View style={styles.folderInnerIcon}>
+          <MaterialCommunityIcons name={innerIcon} size={34} color={innerColor} />
         </View>
       </View>
       <Text numberOfLines={1} style={styles.folderName}>

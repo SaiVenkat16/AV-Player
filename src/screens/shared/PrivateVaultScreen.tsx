@@ -20,6 +20,7 @@ import { useBottomPadding } from '../../hooks/useBottomPadding';
 import { useVideoPlayerStore } from '../../store/videoPlayerStore';
 import { showThemedAlert } from '../../utils/themedAlert';
 import { toImageSource } from '../../utils/mediaUri';
+import { PrivateVideoRow } from '../../components/common/PrivateVideoRow';
 
 export function PrivateVaultScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
@@ -234,21 +235,15 @@ export function PrivateVaultScreen(): React.ReactElement {
             <FlashList
               showsVerticalScrollIndicator={false}
               data={privateVideos}
-              estimatedItemSize={68}
+              estimatedItemSize={88}
               keyExtractor={(item) => item.id}
               contentContainerStyle={{ paddingBottom: bottomPadding }}
               renderItem={({ item }) => (
-                <Pressable
-                  style={styles.songRow}
-                  onPress={() => useVideoPlayerStore.getState().openVideo(item.id)}
-                >
-                  <View style={styles.songMeta}>
-                    <Text numberOfLines={1} style={styles.songTitle}>{item.title}</Text>
-                  </View>
-                  <Pressable hitSlop={12} onPress={() => togglePrivateId(item.id)}>
-                    <MaterialCommunityIcons name="lock-open-outline" size={20} color={Colors.textMuted} />
-                  </Pressable>
-                </Pressable>
+                <PrivateVideoRow
+                  item={item}
+                  onOpen={() => useVideoPlayerStore.getState().openVideo(item.id)}
+                  onRestore={() => togglePrivateId(item.id)}
+                />
               )}
             />
           )

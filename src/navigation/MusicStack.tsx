@@ -19,7 +19,7 @@ export type MusicStackParamList = {
   Search: { mode: 'music' | 'video' };
   Playlist: { playlistId: string };
   PrivateVault: { mode: 'audio' | 'video' };
-  Favorites: undefined;
+  Favorites: { mode: 'audio' | 'video' } | undefined;
 };
 
 const Stack = createNativeStackNavigator<MusicStackParamList>();

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Platform, StatusBar, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StatusBar, Text, View } from 'react-native';
 import Video, { SelectedTrackType, ViewType } from 'react-native-video';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import type { Video as VideoItem } from '../../types';
 import { styles } from '../../styles/components/video/EmbeddedVideoPlayerStyles';
@@ -10,15 +11,13 @@ import { VideoGestureHandler } from './VideoGestureHandler';
 import { GestureHUD } from './GestureHUD';
 import { DoubleTapSeekOverlay } from './DoubleTapSeekOverlay';
 import { VideoErrorOverlay } from './VideoErrorOverlay';
-import { VideoPoster } from './VideoPoster';
-import { SubtitleSheet } from './SubtitleSheet';
 import { DictionaryCard } from './components/DictionaryCard';
-import { VolumeBrightnessSliders } from './components/VolumeBrightnessSliders';
 import { ControlTopBar } from './components/ControlTopBar';
 import { ControlCenterPlay } from './components/ControlCenterPlay';
 import { ControlBottomBar } from './components/ControlBottomBar';
-import { AudioTrackSheet } from './components/AudioTrackSheet';
-import { SceneBookmarksSheet } from './components/SceneBookmarksSheet';
+import { TracksModal, type SubtitleTrackInfo } from './components/TracksModal';
+import { ThemedToast } from '../common/ThemedToast';
+import { setImmersiveMode } from '../../services/FileOpsService';
 import { useVideoPlayerState } from './hooks/useVideoPlayerState';
 
 const RESIZE_MODES = ['contain', 'cover', 'stretch'] as const;
@@ -52,10 +51,6 @@ export function EmbeddedVideoPlayer({
     dictWord,
     setDictWord,
     dictMeaning,
-    sceneOpen,
-    setSceneOpen,
-    volume,
-    brightness,
     isOrientationLocked,
     setIsOrientationLocked,
     audioTracks,
@@ -63,13 +58,18 @@ export function EmbeddedVideoPlayer({
     setSelectedAudioTrackIdx,
     audioOpen,
     setAudioOpen,
+    controlsLocked,
+    setControlsLocked,
+    embeddedTextTracks,
+    selectedEmbeddedSubIdx,
+    setSelectedEmbeddedSubIdx,
+    resumeToast,
+    setResumeToast,
     externalTracks,
     videoRef,
     uri,
     prog,
     activeCue,
-    videoBookmarks,
-    removeBookmark,
     toggleControls,
     goBack,
     seek,
@@ -78,7 +78,6 @@ export function EmbeddedVideoPlayer({
     handleGestureHud,
     handleDoubleTap,
     handleWordPress,
-    handleAddBookmark,
     cyclePlaybackRate,
     togglePip,
     handleLoad,
@@ -86,9 +85,75 @@ export function EmbeddedVideoPlayer({
     handleEnd,
   } = useVideoPlayerState({ item, onBack });
 
+  // Build a unified subtitle list from embedded text tracks + external SRTs.
+  // IDs are tagged so we can route the selection back to the correct source.
+  const subtitleTracks = React.useMemo<SubtitleTrackInfo[]>(() => {
+    const list: SubtitleTrackInfo[] = [];
+    embeddedTextTracks.forEach((t, i) => {
+      list.push({
+        id: 1000 + i, // embedded id space
+        source: 'embedded',
+        title: t.title || t.language || `Track ${i + 1}`,
+        language: t.language,
+        type: t.type,
+        index: t.index,
+      });
+    });
+    externalTracks.forEach((t, i) => {
+      list.push({
+        id: 2000 + i, // external id space
+        source: 'external',
+        title: t.title || `Subtitle ${i + 1}`,
+        language: t.language,
+        type: t.type,
+        index: i,
+        uri: t.uri,
+      });
+    });
+    return list;
+  }, [embeddedTextTracks, externalTracks]);
+
+  // Currently selected unified subtitle id. -1 = off.
+  const selectedSubtitleId = React.useMemo(() => {
+    if (selectedEmbeddedSubIdx !== -1) {
+      return 1000 + selectedEmbeddedSubIdx;
+    }
+    if (selectedSubIdx !== -1) {
+      return 2000 + selectedSubIdx;
+    }
+    return -1;
+  }, [selectedEmbeddedSubIdx, selectedSubIdx]);
+
+  const handleSelectSubtitle = React.useCallback(
+    (id: number) => {
+      if (id === -1) {
+        setSelectedSubIdx(-1);
+        setSelectedEmbeddedSubIdx(-1);
+        return;
+      }
+      if (id >= 2000) {
+        setSelectedEmbeddedSubIdx(-1);
+        setSelectedSubIdx(id - 2000);
+        return;
+      }
+      // Embedded: id range 1000+
+      setSelectedSubIdx(-1);
+      setSelectedEmbeddedSubIdx(id - 1000);
+    },
+    [setSelectedSubIdx, setSelectedEmbeddedSubIdx],
+  );
+
+  // Enter Android immersive mode so video covers the system bars.
+  React.useEffect(() => {
+    setImmersiveMode(true);
+    return () => {
+      setImmersiveMode(false);
+    };
+  }, []);
+
   return (
     <View style={styles.root} collapsable={false}>
-      <StatusBar hidden />
+      <StatusBar hidden animated={false} />
 
       {/* Video rendered directly as child of root - not inside GestureHandler */}
       <Video
@@ -106,6 +171,11 @@ export function EmbeddedVideoPlayer({
             ? { type: SelectedTrackType.INDEX, value: selectedAudioTrackIdx }
             : undefined
         }
+        selectedTextTrack={
+          selectedEmbeddedSubIdx !== -1
+            ? { type: SelectedTrackType.INDEX, value: selectedEmbeddedSubIdx }
+            : { type: SelectedTrackType.DISABLED, value: undefined as never }
+        }
         controls={false}
         hideShutterView
         shutterColor="transparent"
@@ -120,15 +190,21 @@ export function EmbeddedVideoPlayer({
 
       {/* Gesture layer on top of video */}
       <VideoGestureHandler
-        locked={false}
+        locked={controlsLocked}
+        controlsActive={showControls && !controlsLocked}
         onHud={handleGestureHud}
         onDoubleTap={handleDoubleTap}
         onSingleTap={toggleControls}
       >
-        {/* Video poster and Gestures HUDs */}
-        <VideoPoster source={item.thumbnailUri ? { uri: item.thumbnailUri } : null} visible={loading} />
+        {/* Subtle loading spinner shown while the native video surface
+            initialises (otherwise users see a brief plain black screen). */}
+        {loading && !error && (
+          <View style={styles.loadingOverlay} pointerEvents="none">
+            <ActivityIndicator size="large" color="#fff" />
+          </View>
+        )}
 
-        <GestureHUD visible={hud.visible} icon={hud.icon} label={hud.label} barFraction={hud.bar} />
+        <GestureHUD visible={hud.visible} icon={hud.icon} label={hud.label} barFraction={hud.bar} side={hud.side} />
 
         <DoubleTapSeekOverlay side={doubleTapState.side} times={doubleTapState.count} />
 
@@ -164,19 +240,15 @@ export function EmbeddedVideoPlayer({
           />
         )}
 
-        {showControls && !error && (
+        {showControls && !error && !controlsLocked && (
           <View style={styles.overlay} pointerEvents="box-none">
             <ControlTopBar
               title={item.title}
               resizeIdx={resizeIdx}
               onBack={goBack}
-              onOpenScenes={() => setSceneOpen(true)}
-              onOpenAudio={() => setAudioOpen(true)}
-              onOpenSubtitles={() => setSubOpen(true)}
+              onOpenTracks={() => setAudioOpen(true)}
               onCycleResize={() => setResizeIdx((i) => (i + 1) % RESIZE_MODES.length)}
             />
-
-            <VolumeBrightnessSliders volume={volume} brightness={brightness} />
 
             <ControlCenterPlay
               paused={paused}
@@ -190,46 +262,47 @@ export function EmbeddedVideoPlayer({
               pos={pos}
               dur={dur}
               prog={prog}
-              videoBookmarks={videoBookmarks}
               onSeekTo={seekTo}
-              onAddBookmark={handleAddBookmark}
               rate={rate}
               onCycleRate={cyclePlaybackRate}
               isOrientationLocked={isOrientationLocked}
               onToggleOrientationLock={() => setIsOrientationLocked(!isOrientationLocked)}
               pipActive={pipActive}
               onTogglePip={togglePip}
+              controlsLocked={controlsLocked}
+              onToggleControlsLock={() => setControlsLocked((v) => !v)}
             />
           </View>
         )}
+        {/* Locked-state unlock button (always visible while locked) */}
+        {controlsLocked && (
+          <Pressable
+            onPress={() => setControlsLocked(false)}
+            style={styles.lockedFloatingBtn}
+            hitSlop={12}
+          >
+            <MaterialCommunityIcons name="lock" size={22} color="#fff" />
+          </Pressable>
+        )}
       </VideoGestureHandler>
 
-      {/* Subtitles Track Selection Sheet */}
-      <SubtitleSheet
-        visible={subOpen}
-        onClose={() => setSubOpen(false)}
-        tracks={externalTracks}
-        selectedIndex={selectedSubIdx}
-        onSelect={setSelectedSubIdx}
-      />
-
-      {/* Audio Language Selection Sheet */}
-      <AudioTrackSheet
-        visible={audioOpen}
-        onClose={() => setAudioOpen(false)}
+      {/* Subtitles + Audio Tracks combined modal */}
+      <TracksModal
+        visible={audioOpen || subOpen}
+        onClose={() => {
+          setAudioOpen(false);
+          setSubOpen(false);
+        }}
         audioTracks={audioTracks}
         selectedAudioTrackIdx={selectedAudioTrackIdx}
-        onSelectTrack={setSelectedAudioTrackIdx}
+        onSelectAudio={setSelectedAudioTrackIdx}
+        subtitleTracks={subtitleTracks}
+        selectedSubtitleId={selectedSubtitleId}
+        onSelectSubtitle={handleSelectSubtitle}
       />
 
-      {/* Bookmark Scenes Drawer Sheet */}
-      <SceneBookmarksSheet
-        visible={sceneOpen}
-        onClose={() => setSceneOpen(false)}
-        videoBookmarks={videoBookmarks}
-        onSeekTo={seekTo}
-        onRemoveBookmark={(time) => removeBookmark(item.id, time)}
-      />
+      {/* Themed app-level toast (e.g. resume position notice) */}
+      <ThemedToast message={resumeToast} onHide={() => setResumeToast(null)} />
     </View>
   );
 }

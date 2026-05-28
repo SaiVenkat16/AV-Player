@@ -13,7 +13,7 @@ export const VideoPoster: React.FC<VideoPosterProps> = ({ source, visible }) => 
     <Image
       source={source}
       style={styles.poster}
-      resizeMode="cover"
+      resizeMode="contain"
     />
   );
 };

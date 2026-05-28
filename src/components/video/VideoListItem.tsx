@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -11,6 +11,7 @@ import { Colors } from '../../theme/colors';
 import type { Video } from '../../types';
 import { toImageSource } from '../../utils/mediaUri';
 import { formatTime } from '../../utils/formatTime';
+import { useLibraryStore } from '../../store/libraryStore';
 import { styles } from '../../styles/components/video/VideoListItemStyles';
 
 function formatSize(bytes: number): string {
@@ -23,31 +24,89 @@ function formatSize(bytes: number): string {
 interface VideoListItemProps {
   item: Video;
   onPress: () => void;
-  onLongPress: () => void;
+  onLongPress?: () => void;
+  onMenuPress: (video: Video, pageY: number) => void;
+  selected?: boolean;
+  selectionMode?: boolean;
 }
 
 export function VideoListItem({
   item,
   onPress,
   onLongPress,
+  onMenuPress,
+  selected = false,
+  selectionMode = false,
 }: VideoListItemProps): React.ReactElement {
+  const ensureThumb = useLibraryStore((s) => s.ensureVideoThumbnail);
+  const invalidateThumb = useLibraryStore((s) => s.invalidateVideoThumbnail);
+  const [thumbState, setThumbState] = useState<'loading' | 'ready' | 'failed'>(
+    item.thumbnailUri ? 'ready' : 'loading',
+  );
+
+  // Lazy generate thumbnail when this row mounts/becomes visible
+  useEffect(() => {
+    if (item.thumbnailUri) {
+      setThumbState('ready');
+      return;
+    }
+    let alive = true;
+    setThumbState('loading');
+    ensureThumb(item.id)
+      .then(() => {
+        if (alive) setThumbState('ready');
+      })
+      .catch(() => {
+        if (alive) setThumbState('failed');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [ensureThumb, item.id, item.thumbnailUri]);
+
+  const handleImageError = () => {
+    // Stale cache or broken file - clear and retry once
+    invalidateThumb(item.id);
+    setThumbState('loading');
+    ensureThumb(item.id, { force: true })
+      .then(() => setThumbState('ready'))
+      .catch(() => setThumbState('failed'));
+  };
+
   return (
     <Pressable
-      style={styles.videoItem}
+      style={[styles.videoItem, selected && styles.videoItemSelected]}
       onPress={onPress}
       onLongPress={onLongPress}
       android_ripple={{ color: 'rgba(255,255,255,0.07)' }}>
+      {selectionMode && (
+        <MaterialCommunityIcons
+          name={
+            selected
+              ? 'checkbox-marked-circle'
+              : 'checkbox-blank-circle-outline'
+          }
+          size={22}
+          color={selected ? Colors.accent1 : Colors.textMuted}
+          style={styles.selectIcon}
+        />
+      )}
       {/* Thumbnail */}
       <View style={styles.thumbWrap}>
-        {item.thumbnailUri ? (
+        {thumbState === 'ready' && item.thumbnailUri ? (
           <Image
             source={toImageSource(item.thumbnailUri)}
             style={styles.thumb}
             resizeMode="cover"
+            onError={handleImageError}
           />
         ) : (
           <LinearGradient colors={['#1a1a35', '#0d0d1f']} style={styles.thumb}>
-            <MaterialCommunityIcons name="play-circle-outline" size={28} color={Colors.accent1} />
+            <MaterialCommunityIcons
+              name={thumbState === 'failed' ? 'video-off-outline' : 'play-circle-outline'}
+              size={28}
+              color={thumbState === 'failed' ? Colors.textMuted : Colors.accent1}
+            />
           </LinearGradient>
         )}
         {/* Duration badge */}
@@ -82,12 +141,19 @@ export function VideoListItem({
         </View>
       </View>
 
-      {/* Play chevron */}
-      <MaterialCommunityIcons
-        name="chevron-right"
-        size={22}
-        color={Colors.textMuted}
-      />
+      {/* 3-dot menu (hidden in selection mode) */}
+      {!selectionMode && (
+        <Pressable
+          hitSlop={12}
+          onPress={(e) => onMenuPress(item, e.nativeEvent.pageY)}
+        >
+          <MaterialCommunityIcons
+            name="dots-vertical"
+            size={20}
+            color={Colors.textMuted}
+          />
+        </Pressable>
+      )}
     </Pressable>
   );
 }

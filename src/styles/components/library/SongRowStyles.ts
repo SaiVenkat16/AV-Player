@@ -11,6 +11,8 @@ export const styles = StyleSheet.create({
     borderColor: Colors.glassBorder,
   },
   active: { backgroundColor: 'rgba(168,85,247,0.12)' },
+  selected: { backgroundColor: 'rgba(168,85,247,0.22)' },
+  selectIcon: { marginRight: 10 },
   art: { width: 48, height: 48, borderRadius: 10, marginRight: 12 },
   t: { color: Colors.textPrimary },
   a: { color: Colors.textSecondary },

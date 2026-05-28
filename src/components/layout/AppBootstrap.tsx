@@ -4,6 +4,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootNavigator } from '../../navigation/RootNavigator';
 import { PlayerBootstrap } from '../player/PlayerBootstrap';
 import { ThemedAlertProvider } from '../common/ThemedAlertProvider';
+import { GlobalToast } from '../common/GlobalToast';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { PermissionScreen } from '../../screens/PermissionScreen';
 import { requestStoragePermission } from '../../services/StorageScanner';
@@ -201,6 +202,7 @@ export function AppBootstrap(): React.ReactElement {
       <>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent={true} />
         {body}
+        <GlobalToast />
       </>
     </ThemedAlertProvider>
   );

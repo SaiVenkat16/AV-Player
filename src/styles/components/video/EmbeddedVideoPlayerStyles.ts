@@ -24,7 +24,6 @@ export const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: Platform.OS === 'android' ? 12 : 44,
     paddingBottom: 20,
     paddingHorizontal: 12,
   },
@@ -270,6 +269,27 @@ export const styles = StyleSheet.create({
   },
   activeAudioTrackText: {
     color: Colors.accent2,
+  },
+  lockedFloatingBtn: {
+    position: 'absolute',
+    top: '50%',
+    right: 16,
+    marginTop: -22,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
   },
 });
 

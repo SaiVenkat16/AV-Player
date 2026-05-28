@@ -97,6 +97,21 @@ export async function loadQueue(
   if (idx > 0) {
     await TrackPlayer.skip(idx);
   }
+  // Wait briefly for TrackPlayer to mark the active track. Without this, a
+  // subsequent play() can race with the queue load on a freshly installed
+  // app and emit "no track selected", causing a black-screen frame and
+  // skipping to the next song.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      const active = await TrackPlayer.getActiveTrack();
+      if (active) {
+        return;
+      }
+    } catch {
+      // ignore — service may not be fully bound yet
+    }
+    await new Promise<void>((r) => setTimeout(() => r(), 25));
+  }
 }
 
 function shuffleArray<T>(arr: T[]): T[] {

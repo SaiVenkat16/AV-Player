@@ -42,7 +42,15 @@ export function MiniPlayer({ bottomInset }: { bottomInset: number }): React.Reac
 
   const isPrivateSong = current ? privateIds.includes(current.id) : false;
 
-  if (!current || isPlayerVisible || isPrivateSong || activeScreen === 'VideoFolderDetail' || activeScreen === 'NowPlaying' || activeVideoId) {
+  if (
+    !current ||
+    isPlayerVisible ||
+    isPrivateSong ||
+    activeScreen === 'VideoFolderDetail' ||
+    activeScreen === 'NowPlaying' ||
+    activeScreen === 'PrivateVault' ||
+    activeVideoId
+  ) {
     return null;
   }
 

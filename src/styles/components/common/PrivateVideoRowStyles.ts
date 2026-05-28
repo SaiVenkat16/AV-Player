@@ -2,7 +2,7 @@ import { StyleSheet } from 'react-native';
 import { Colors } from '../../../theme/colors';
 
 export const styles = StyleSheet.create({
-  videoItem: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -11,26 +11,19 @@ export const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.glassBorder,
   },
-  videoItemSelected: {
-    backgroundColor: 'rgba(168,85,247,0.18)',
-  },
-  selectIcon: { marginRight: 4 },
   thumbWrap: {
-    width: 120,
+    width: 110,
     aspectRatio: 16 / 9,
     borderRadius: 10,
     overflow: 'hidden',
-    position: 'relative',
     backgroundColor: Colors.surfaceElevated,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexShrink: 0,
+    position: 'relative',
   },
   thumb: {
     width: '100%',
     height: '100%',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   durationBadge: {
     position: 'absolute',
@@ -41,25 +34,22 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 5,
     paddingVertical: 1,
   },
-  durationText: { color: '#fff', fontSize: 10, fontFamily: 'Poppins-Bold' },
-  resBadge: {
-    position: 'absolute',
-    top: 4,
-    left: 4,
-    backgroundColor: 'rgba(168,85,247,0.8)',
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+  durationText: {
+    color: '#fff',
+    fontSize: 10,
+    fontFamily: 'Poppins-Bold',
   },
-  resText: { color: '#fff', fontSize: 10, fontFamily: 'Poppins-ExtraBold' },
-  videoMeta: { flex: 1 },
-  videoTitle: {
+  meta: { flex: 1 },
+  title: {
     color: Colors.textPrimary,
     fontSize: 14,
     fontFamily: 'Poppins-SemiBold',
     lineHeight: 20,
   },
-  videoSubRow: { flexDirection: 'row', marginTop: 4 },
-  videoSub: { color: Colors.textMuted, fontSize: 11 },
+  sub: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  restoreBtn: { padding: 4 },
 });
-

@@ -3,57 +3,36 @@ import { Colors } from '../../../theme/colors';
 
 export const styles = StyleSheet.create({
   folderCard: {
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: Colors.surface,
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 0,
+  },
+  folderIcon: {
+    width: 140,
+    height: 140,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,
     borderColor: Colors.glassBorder,
-  },
-  folderThumbWrap: {
-    width: '100%',
-    aspectRatio: 16 / 9,
+    alignItems: 'center',
+    justifyContent: 'center',
     position: 'relative',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  folderThumb: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  folderGradient: {
-    ...StyleSheet.absoluteFill,
-  },
-  countBadge: {
+  folderInnerIcon: {
     position: 'absolute',
-    bottom: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  countBadgeText: {
-    color: Colors.textPrimary,
-    fontSize: 11,
-    fontFamily: 'Poppins-Bold',
   },
   folderName: {
     color: Colors.textPrimary,
     fontSize: 13,
-    fontFamily: 'Poppins-Bold',
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 2,
+    fontFamily: 'Poppins-SemiBold',
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 4,
   },
   folderSub: {
-    color: Colors.textMuted,
+    color: Colors.textSecondary,
     fontSize: 11,
-    paddingHorizontal: 10,
-    paddingBottom: 10,
+    fontFamily: 'Poppins-Regular',
+    marginTop: 2,
   },
 });
-

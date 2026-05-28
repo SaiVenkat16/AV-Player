@@ -63,43 +63,65 @@ export async function scanDeviceMedia(
   const songs: Song[] = [];
   const videos: Video[] = [];
   const seenPaths = new Set<string>();
-  const searchPaths = [
-    RNFS.ExternalStorageDirectoryPath,
-    `${RNFS.ExternalStorageDirectoryPath}/Music`,
-    `${RNFS.ExternalStorageDirectoryPath}/Download`,
-    `${RNFS.ExternalStorageDirectoryPath}/DCIM`,
-    `${RNFS.ExternalStorageDirectoryPath}/Movies`,
-    `${RNFS.ExternalStorageDirectoryPath}/Videos`,
-    `${RNFS.ExternalStorageDirectoryPath}/WhatsApp/Media`,
-  ].filter(Boolean);
+  const seenDirs = new Set<string>();
+  const seenFileIds = new Set<string>();
+  // Single root - we recurse from here, so listing subdirectories explicitly
+  // would scan the same files multiple times.
+  const searchPaths = [RNFS.ExternalStorageDirectoryPath].filter(Boolean);
 
   const dirStack: string[] = [...searchPaths];
   const fileTasks: { path: string; name: string; type: 'audio' | 'video' }[] =
     [];
 
+  const normalize = (p: string): string =>
+    p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
+
+  // Folders we never want to scan - bloated, hidden or system
+  const SKIP_DIR_NAMES = new Set([
+    'Android', // Android/data + Android/obb often inaccessible on 11+ and noisy
+    '.thumbnails',
+    '.trashed',
+    '.cache',
+    'cache',
+    'tmp',
+    'temp',
+    'node_modules',
+  ]);
+
   // Step 1: Discover all files
   while (dirStack.length > 0) {
-    const dirPath = dirStack.pop();
-    if (!dirPath) continue;
+    const rawDir = dirStack.pop();
+    if (!rawDir) continue;
+    const dirPath = normalize(rawDir);
+    if (seenDirs.has(dirPath)) continue;
+    seenDirs.add(dirPath);
 
     try {
       const items = await RNFS.readDir(dirPath);
       for (const item of items) {
-        if (seenPaths.has(item.path)) continue;
-        seenPaths.add(item.path);
+        const itemPath = normalize(item.path);
+        if (seenPaths.has(itemPath)) continue;
+        seenPaths.add(itemPath);
 
         if (item.isDirectory()) {
-          dirStack.push(item.path);
+          // Skip hidden folders (starting with '.') and known noisy dirs
+          if (item.name.startsWith('.')) continue;
+          if (SKIP_DIR_NAMES.has(item.name)) continue;
+          dirStack.push(itemPath);
         } else {
           const ext = extOf(item.name);
           if (
             AUDIO_EXTENSIONS.includes(ext as (typeof AUDIO_EXTENSIONS)[number])
           ) {
-            fileTasks.push({ path: item.path, name: item.name, type: 'audio' });
+            if (seenFileIds.has(itemPath)) continue;
+            seenFileIds.add(itemPath);
+            fileTasks.push({ path: itemPath, name: item.name, type: 'audio' });
           } else if (
             VIDEO_EXTENSIONS.includes(ext as (typeof VIDEO_EXTENSIONS)[number])
           ) {
-            fileTasks.push({ path: item.path, name: item.name, type: 'video' });
+            if (seenFileIds.has(itemPath)) continue;
+            seenFileIds.add(itemPath);
+            fileTasks.push({ path: itemPath, name: item.name, type: 'video' });
           }
         }
       }

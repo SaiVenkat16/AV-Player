@@ -22,6 +22,8 @@ type Props = {
     onPress: () => void;
     iconColor?: string;
   };
+  selected?: boolean;
+  selectionMode?: boolean;
 };
 
 export const SongRow = React.memo((
@@ -33,6 +35,8 @@ export const SongRow = React.memo((
   onLongPress,
   onAddQueue,
   rightAction,
+  selected = false,
+  selectionMode = false,
 }: Props): React.ReactElement => {
   // Only poll progress when this row is the active playing track
   // This avoids 250ms re-renders in MusicTab for all rows
@@ -45,9 +49,22 @@ export const SongRow = React.memo((
       style={({ pressed }) => [
         styles.row,
         active && styles.active,
+        selected && styles.selected,
         pressed && { opacity: 0.75 },
       ]}
     >
+      {selectionMode && (
+        <MaterialCommunityIcons
+          name={
+            selected
+              ? 'checkbox-marked-circle'
+              : 'checkbox-blank-circle-outline'
+          }
+          size={22}
+          color={selected ? Colors.accent1 : Colors.textMuted}
+          style={styles.selectIcon}
+        />
+      )}
       {song.albumArt ? (
         <Image source={toImageSource(song.albumArt)} style={styles.art} resizeMode="cover" />
       ) : (

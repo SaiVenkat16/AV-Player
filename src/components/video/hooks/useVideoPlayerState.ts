@@ -7,6 +7,7 @@ import { OnLoadData, OnProgressData } from 'react-native-video';
 
 import { useLibraryStore } from '../../../store/libraryStore';
 import { usePlayerStore } from '../../../store/playerStore';
+import { useVideoPlayerStore } from '../../../store/videoPlayerStore';
 import { toMediaUri } from '../../../utils/mediaUri';
 import { formatTime } from '../../../utils/formatTime';
 import { parseSRT, type Cue } from '../../../utils/srtParser';
@@ -30,6 +31,9 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
   const videoBookmarks = useLibraryStore((s) => s.videoBookmarks[item.id]) ?? [];
   const addBookmark = useLibraryStore((s) => s.addVideoBookmark);
   const removeBookmark = useLibraryStore((s) => s.removeVideoBookmark);
+  const savedProgress = useLibraryStore((s) => s.videoProgress[item.id]);
+  const setVideoProgress = useLibraryStore((s) => s.setVideoProgress);
+  const clearVideoProgress = useLibraryStore((s) => s.clearVideoProgress);
 
   const sleepTimerAt = usePlayerStore((s) => s.sleepTimerAt);
   const clearSleepTimer = usePlayerStore((s) => s.clearSleepTimer);
@@ -47,7 +51,13 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
   const [pipActive, setPipActive] = useState(false);
 
   // HUD & Double Tap Overlays
-  const [hud, setHud] = useState({ visible: false, icon: '', label: '', bar: 0 });
+  const [hud, setHud] = useState<{
+    visible: boolean;
+    icon: string;
+    label: string;
+    bar: number;
+    side: 'left' | 'right' | 'center';
+  }>({ visible: false, icon: '', label: '', bar: 0, side: 'center' });
   const [doubleTapState, setDoubleTapState] = useState<{
     side: 'left' | 'right' | null;
     count: number;
@@ -75,6 +85,17 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
   >([]);
   const [selectedAudioTrackIdx, setSelectedAudioTrackIdx] = useState<number>(-1);
   const [audioOpen, setAudioOpen] = useState(false);
+  const [controlsLocked, setControlsLocked] = useState(false);
+
+  // Embedded text (subtitle) tracks reported by react-native-video on load
+  const [embeddedTextTracks, setEmbeddedTextTracks] = useState<
+    { index: number; title?: string; language?: string; type?: string }[]
+  >([]);
+  // -1 = no embedded track selected. Otherwise the embedded track index.
+  const [selectedEmbeddedSubIdx, setSelectedEmbeddedSubIdx] = useState<number>(-1);
+
+  // Resume toast (themed, app-styled — not the system Android toast)
+  const [resumeToast, setResumeToast] = useState<string | null>(null);
 
   const externalTracks = useExternalSubtitles(item.path);
 
@@ -82,6 +103,8 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const doubleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSaveAt = useRef(0);
+  const resumeAppliedRef = useRef(false);
 
   const posRef = useRef(0);
   const durRef = useRef(0);
@@ -113,16 +136,31 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
     loadSubtitles();
   }, [selectedSubIdx, externalTracks]);
 
-  // Volume & Brightness initial query + listener
+  // Volume & Brightness initial query + listener.
+  // We also save the initial brightness so we can restore it on unmount —
+  // without this the app-level brightness sticks to whatever the user set
+  // during playback and bleeds into the rest of the UI.
   useEffect(() => {
     SystemSetting.getVolume('music').then(setVolume);
-    SystemSetting.getBrightness().then(setBrightness);
+
+    let initialBrightness: number | null = null;
+    SystemSetting.getAppBrightness().then((b) => {
+      initialBrightness = b;
+      setBrightness(b);
+    });
 
     const volumeSub = SystemSetting.addVolumeListener((data) => {
       setVolume(data.value);
     });
     return () => {
       SystemSetting.removeVolumeListener(volumeSub);
+      // Restore the original brightness when the player closes.
+      if (initialBrightness !== null) {
+        SystemSetting.setAppBrightness(initialBrightness);
+      } else {
+        // Fallback: hand control back to the system.
+        SystemSetting.setAppBrightness(-1 as never);
+      }
     };
   }, []);
 
@@ -160,9 +198,9 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
     return () => clearInterval(interval);
   }, [sleepTimerAt, clearSleepTimer]);
 
-  // Unlock orientation when video player is active
+  // Auto-rotate to landscape when video player opens
   useEffect(() => {
-    Orientation.unlockAllOrientations();
+    Orientation.lockToLandscape();
     return () => {
       Orientation.lockToPortrait();
     };
@@ -174,7 +212,16 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
       if (hideTimer.current) clearTimeout(hideTimer.current);
       if (hudTimer.current) clearTimeout(hudTimer.current);
       if (doubleTapTimer.current) clearTimeout(doubleTapTimer.current);
+      // Save final position on unmount (user closed video mid-watch)
+      if (
+        durRef.current > 0 &&
+        posRef.current > 5 &&
+        posRef.current < durRef.current - 10
+      ) {
+        setVideoProgress(item.id, posRef.current, durRef.current);
+      }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const scheduleHide = useCallback(() => {
@@ -227,12 +274,27 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
   const handleProgress = useCallback((p: OnProgressData) => {
     setPos(p.currentTime);
     posRef.current = p.currentTime;
-  }, []);
+    // Throttled save (every 5 seconds) and only if duration is known
+    const now = Date.now();
+    if (durRef.current > 0 && now - lastSaveAt.current > 5000) {
+      lastSaveAt.current = now;
+      // Don't save very early progress (< 5s) or near the end (last 10s)
+      if (p.currentTime > 5 && p.currentTime < durRef.current - 10) {
+        setVideoProgress(item.id, p.currentTime, durRef.current);
+      }
+    }
+  }, [item.id, setVideoProgress]);
 
   // Gesture Handlers
-  const handleGestureHud = useCallback((payload: { icon: string; label: string; bar: number }) => {
+  const handleGestureHud = useCallback((payload: { icon: string; label: string; bar: number; side?: 'left' | 'right' | 'center' }) => {
     if (hudTimer.current) clearTimeout(hudTimer.current);
-    setHud({ visible: true, icon: payload.icon, label: payload.label, bar: payload.bar });
+    setHud({
+      visible: true,
+      icon: payload.icon,
+      label: payload.label,
+      bar: payload.bar,
+      side: payload.side ?? 'center',
+    });
     if (payload.label === 'Brightness') {
       setBrightness(payload.bar);
     } else if (payload.label === 'Volume') {
@@ -273,7 +335,7 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
   const handleAddBookmark = useCallback(() => {
     const label = `Scene at ${formatTime(pos)}`;
     addBookmark(item.id, pos, label);
-    handleGestureHud({ icon: '🔖', label: 'Bookmark Added', bar: 1.0 });
+    handleGestureHud({ icon: 'bookmark-plus', label: 'Bookmark Added', bar: 1.0 });
   }, [pos, item.id, addBookmark, handleGestureHud]);
 
   const cyclePlaybackRate = useCallback(() => {
@@ -281,7 +343,7 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
     const nextIdx = (rates.indexOf(rate) + 1) % rates.length;
     setRate(rates[nextIdx]);
     handleGestureHud({
-      icon: '💨',
+      icon: 'speedometer',
       label: `Speed: ${rates[nextIdx]}x`,
       bar: rates[nextIdx] / 2,
     });
@@ -317,8 +379,28 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
         setSelectedAudioTrackIdx(d.audioTracks[0].index);
       }
     }
-    Orientation.unlockAllOrientations();
-  }, [item.id, setMeta]);
+    // Capture embedded subtitle tracks (movies often ship multiple languages)
+    if ((d as any).textTracks) {
+      const tracks = (d as any).textTracks as Array<{
+        index: number;
+        title?: string;
+        language?: string;
+        type?: string;
+      }>;
+      setEmbeddedTextTracks(tracks ?? []);
+    }
+    // Auto-resume from saved position (only once per video open)
+    if (!resumeAppliedRef.current && savedProgress && savedProgress.position > 5) {
+      resumeAppliedRef.current = true;
+      const target = Math.min(savedProgress.position, d.duration - 5);
+      if (target > 0) {
+        videoRef.current?.seek(target);
+        posRef.current = target;
+        setPos(target);
+        setResumeToast(`Resumed at ${formatTime(target)}`);
+      }
+    }
+  }, [item.id, setMeta, savedProgress]);
 
   const handleError = useCallback((e: any) => {
     setError(e?.error?.errorString ?? 'Playback failed');
@@ -329,8 +411,16 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
   const handleEnd = useCallback(() => {
     setPaused(true);
     setPos(durRef.current);
+    // Video completed - clear resume position
+    clearVideoProgress(item.id);
+    // Auto-advance to the next video in the playlist; if none, close the
+    // player so the user lands back on the folder/list they came from.
+    const advanced = useVideoPlayerStore.getState().playNext();
+    if (!advanced) {
+      onBackRef.current();
+    }
     scheduleHide();
-  }, [scheduleHide]);
+  }, [scheduleHide, clearVideoProgress, item.id]);
 
   const uri = toMediaUri(item.path) ?? item.path;
   const prog = dur > 0 ? Math.min(1, pos / dur) : 0;
@@ -388,6 +478,13 @@ export function useVideoPlayerState({ item, onBack }: UseVideoPlayerStateProps) 
     setSelectedAudioTrackIdx,
     audioOpen,
     setAudioOpen,
+    controlsLocked,
+    setControlsLocked,
+    embeddedTextTracks,
+    selectedEmbeddedSubIdx,
+    setSelectedEmbeddedSubIdx,
+    resumeToast,
+    setResumeToast,
     externalTracks,
     videoRef,
     posRef,

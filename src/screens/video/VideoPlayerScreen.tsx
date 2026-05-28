@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
-import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import Orientation from 'react-native-orientation-locker';
 import { useLibraryStore } from '../../store/libraryStore';
 import { usePlayerStore } from '../../store/playerStore';
@@ -62,6 +62,7 @@ export function VideoPlayerOverlay(): React.ReactElement | null {
 
   return (
     <View style={styles.root}>
+      <StatusBar hidden animated={false} />
       <EmbeddedVideoPlayer item={item} onBack={goBack} />
     </View>
   );

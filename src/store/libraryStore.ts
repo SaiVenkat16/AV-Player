@@ -7,6 +7,7 @@ import { toLocalPath } from '../utils/mediaUri';
 import { RECENTLY_PLAYED_MAX, STORAGE_KEYS } from '../utils/constants';
 import { Logger } from '../utils/logger';
 import { mmkvZustandStorage } from '../utils/mmkvStorage';
+import { showToast } from './toastStore';
 
 function buildAlbums(songs: Song[]): Album[] {
   const map = new Map<string, Album>();
@@ -75,6 +76,7 @@ type PersistedLibraryState = {
   privateIds: string[];
   privatePin: string | null;
   videoBookmarks: Record<string, { time: number; label: string }[]>;
+  videoProgress: Record<string, { position: number; duration: number; watchedAt: number }>;
 };
 
 function hasUsableThumbnailUri(uri: string | null | undefined): boolean {
@@ -122,6 +124,7 @@ export function migrateLibraryPersistedState(
     privateIds,
     privatePin,
     videoBookmarks: persistedState?.videoBookmarks ?? {},
+    videoProgress: persistedState?.videoProgress ?? {},
   };
 }
 
@@ -157,6 +160,9 @@ interface LibraryState {
   videoBookmarks: Record<string, { time: number; label: string }[]>;
   addVideoBookmark: (videoId: string, time: number, label: string) => void;
   removeVideoBookmark: (videoId: string, time: number) => void;
+  videoProgress: Record<string, { position: number; duration: number; watchedAt: number }>;
+  setVideoProgress: (videoId: string, position: number, duration: number) => void;
+  clearVideoProgress: (videoId: string) => void;
 }
 
 export const useLibraryStore = create<LibraryState>()(
@@ -170,6 +176,7 @@ export const useLibraryStore = create<LibraryState>()(
       privateIds: [],
       privatePin: null,
       videoBookmarks: {},
+      videoProgress: {},
       isScanning: false,
       scanProgress: 0,
       isLoaded: false,
@@ -195,13 +202,32 @@ export const useLibraryStore = create<LibraryState>()(
           },
         });
       },
+      setVideoProgress: (videoId, position, duration) => {
+        set({
+          videoProgress: {
+            ...get().videoProgress,
+            [videoId]: { position, duration, watchedAt: Date.now() },
+          },
+        });
+      },
+      clearVideoProgress: (videoId) => {
+        const next = { ...get().videoProgress };
+        delete next[videoId];
+        set({ videoProgress: next });
+      },
       setPrivatePin: (pin) => set({ privatePin: pin }),
       togglePrivateId: (id) => {
         const current = get().privateIds;
-        const next = current.includes(id)
+        const wasPrivate = current.includes(id);
+        const next = wasPrivate
           ? current.filter((x) => x !== id)
           : [...current, id];
         set({ privateIds: next });
+        showToast(
+          wasPrivate
+            ? 'Removed from private folder'
+            : 'Moved to private folder',
+        );
       },
       scanLibrary: async () => {
         if (scanLibraryPromise) {
@@ -213,9 +239,35 @@ export const useLibraryStore = create<LibraryState>()(
             const { songs, videos } = await scanDeviceMedia((c) => {
               set({ scanProgress: c });
             });
+            // Preserve thumbnails (and other metadata) from previously
+            // scanned videos so a pull-to-refresh doesn't trigger a
+            // full thumbnail rebuild.
+            const prevById = new Map(get().videos.map((v) => [v.id, v]));
+            const mergedVideos = videos.map((v) => {
+              const prev = prevById.get(v.id);
+              if (!prev) return v;
+              return {
+                ...v,
+                thumbnailUri: v.thumbnailUri ?? prev.thumbnailUri,
+                duration: v.duration || prev.duration,
+                width: v.width || prev.width,
+                height: v.height || prev.height,
+              };
+            });
+            // Same for songs — keep enriched metadata (album art etc.)
+            const prevSongsById = new Map(get().songs.map((s) => [s.id, s]));
+            const mergedSongs = songs.map((s) => {
+              const prev = prevSongsById.get(s.id);
+              if (!prev) return s;
+              return {
+                ...s,
+                albumArt: s.albumArt ?? prev.albumArt,
+                duration: s.duration || prev.duration,
+              };
+            });
             set({
-              songs,
-              videos,
+              songs: mergedSongs,
+              videos: mergedVideos,
               isScanning: false,
               isLoaded: true,
               scanProgress: 0,
@@ -301,12 +353,16 @@ export const useLibraryStore = create<LibraryState>()(
       },
       toggleFavorite: (songId) => {
         const fav = new Set(get().favorites);
-        if (fav.has(songId)) {
+        const wasFavorite = fav.has(songId);
+        if (wasFavorite) {
           fav.delete(songId);
         } else {
           fav.add(songId);
         }
         set({ favorites: [...fav] });
+        showToast(
+          wasFavorite ? 'Removed from favorites' : 'Added to favorites',
+        );
       },
       addToPlaylist: (playlistId, songId) => {
         set({
@@ -386,6 +442,7 @@ export const useLibraryStore = create<LibraryState>()(
         privateIds: s.privateIds,
         privatePin: s.privatePin,
         videoBookmarks: s.videoBookmarks,
+        videoProgress: s.videoProgress,
       }),
     },
   ),
